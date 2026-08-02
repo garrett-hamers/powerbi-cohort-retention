@@ -8,14 +8,38 @@ The visual's canonical mapping is:
 
 - **Cohort**: matrix rows
 - **Period**: relative, numeric matrix columns (`0, 1, 2, ...`)
-- **Values**: one primary measure (up to three are accepted for explicit supplied
-  metrics)
+- **Values**: one primary measure when an explicit mode is selected
 - **Tooltip**: optional detail fields
 
 Entity retention is `N(c,k) / N(c,0)`. A future period is rendered as an
 observation-aware blank; an observed period with no qualifying activity is
 rendered as zero. The matrix discloses its grain, denominator, and latest
 observable period in the status line and tooltips.
+
+## Metric contract
+
+The visual never infers a metric from a measure display name. Use one of these
+explicit role sets, or select the matching persisted **Metric mode** in the
+formatting pane:
+
+| Mode | Required roles | Meaning |
+| --- | --- | --- |
+| Entity retention | `Retained`, `CohortSize` | Distinct retained entities `N(c,k)` divided by original distinct cohort size `N(c,0)` |
+| Retained entities (count) | `EntityCount` (or an explicitly selected `Values` source) | Aggregate distinct-entity count, not a rate |
+| Supplied rate | `Numerator`, `Denominator` | Numerator divided by the denominator at each cohort-period cell |
+| Revenue retention | `RevenueNumerator`, `RevenueDenominator` | Revenue at period `k` divided by the explicit period-0 revenue baseline |
+| ARPU | `ARPU` | Average revenue per user, displayed as ARPU and never as retention |
+| Net revenue retention | `NRR`, `NRRExpansion`, `NRRContraction`, `NRRReactivation` | Supplied NRR with explicit expansion, contraction, and reactivation semantics |
+
+`Cohort` and `Period` are grouping roles. `Period` must be a non-negative
+integer index; labels such as `Month 0` are presentation only. `Tooltip` fields
+are passed through to the host tooltip with their host format strings.
+
+The matrix uses a bounded 500-row and 500-column reduction window. When the host
+returns a segment, the visual exposes a **Load more data** action and calls
+`fetchMoreData`; it does not pretend that a truncated view is complete. Drill
+declarations are intentionally absent; hierarchy expand/collapse uses the host
+selection manager and preserves node parents, levels, subtotals, and identities.
 
 ## Development
 
@@ -24,7 +48,9 @@ npm ci
 npm test
 npm run typecheck
 npm run lint
+npm run build
 npm run package
+npm run audit
 ```
 
 The visual has no network or external-asset dependencies, uses no privileges,
