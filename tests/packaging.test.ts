@@ -8,6 +8,7 @@ describe("clean visual package metadata", () => {
     const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8"));
     expect(pbiviz.visual.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
+    expect(pbiviz.visual.version).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
     expect(pbiviz.externalJS).toEqual([]);
     expect(capabilities.privileges).toEqual([]);
     expect(capabilities.dataRoles.map((role: { name: string }) => role.name)).toEqual(
@@ -62,5 +63,16 @@ describe("clean visual package metadata", () => {
       expect(metadata.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
       expect(metadata.privileges).toEqual([]);
     }
+  });
+
+  test("declares the publication gates and direct Power BI tooling", () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+    expect(packageJson.devDependencies["powerbi-visuals-tools"]).toBe("7.2.1");
+    expect(packageJson.devDependencies["eslint-plugin-powerbi-visuals"]).toBe("1.1.1");
+    expect(packageJson.devDependencies.typescript).toBe("5.9.3");
+    expect(packageJson.scripts.eslint).toBe("eslint .");
+    expect(packageJson.scripts.package).toContain("certification:audit");
+    expect(fs.existsSync(path.join(root, "eslint.config.mjs"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "scripts", "certification-audit.js"))).toBe(true);
   });
 });

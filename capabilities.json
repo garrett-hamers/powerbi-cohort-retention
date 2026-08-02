@@ -5,91 +5,112 @@
       "displayName": "Cohort",
       "displayNameKey": "Role_Cohort",
       "name": "Cohort",
-      "kind": "Grouping"
+      "kind": "Grouping",
+      "preferredTypes": [
+        { "text": true },
+        { "dateTime": true }
+      ]
     },
     {
       "displayName": "Period",
       "displayNameKey": "Role_Period",
       "name": "Period",
-      "kind": "Grouping"
+      "kind": "Grouping",
+      "requiredTypes": [
+        { "integer": true },
+        { "numeric": true }
+      ]
     },
     {
       "displayName": "Retained entities N(c,k)",
       "displayNameKey": "Role_Retained",
       "name": "Retained",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "Original cohort size N(c,0)",
       "displayNameKey": "Role_CohortSize",
       "name": "CohortSize",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "Entity count",
       "displayNameKey": "Role_EntityCount",
       "name": "EntityCount",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "Supplied numerator",
       "displayNameKey": "Role_Numerator",
       "name": "Numerator",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "Supplied denominator",
       "displayNameKey": "Role_Denominator",
       "name": "Denominator",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "Revenue numerator",
       "displayNameKey": "Role_RevenueNumerator",
       "name": "RevenueNumerator",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "Revenue denominator",
       "displayNameKey": "Role_RevenueDenominator",
       "name": "RevenueDenominator",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "ARPU",
       "displayNameKey": "Role_ARPU",
       "name": "ARPU",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "NRR",
       "displayNameKey": "Role_NRR",
       "name": "NRR",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "NRR expansion",
       "displayNameKey": "Role_NRRExpansion",
       "name": "NRRExpansion",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "NRR contraction",
       "displayNameKey": "Role_NRRContraction",
       "name": "NRRContraction",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "NRR reactivation",
       "displayNameKey": "Role_NRRReactivation",
       "name": "NRRReactivation",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "Values (explicit mode required)",
       "displayNameKey": "Role_Values",
       "name": "Values",
-      "kind": "Measure"
+      "kind": "Measure",
+      "requiredTypes": [{ "numeric": true }]
     },
     {
       "displayName": "Tooltip",
@@ -103,9 +124,11 @@
       "conditions": [
         {
           "Cohort": {
+            "min": 1,
             "max": 1
           },
           "Period": {
+            "min": 1,
             "max": 1
           },
           "Retained": {
@@ -250,6 +273,34 @@
       }
     }
   ],
+  "sorting": {
+    "implicit": {
+      "clauses": [
+        {
+          "role": "Period",
+          "direction": 1
+        }
+      ]
+    }
+  },
+  "expandCollapse": {
+    "roles": ["Cohort", "Period"],
+    "addDataViewFlags": {
+      "defaultValue": true
+    },
+    "supportsMerge": true,
+    "restoreProjectionsOrderFromBookmark": true
+  },
+  "subtotals": {
+    "matrix": {
+      "rowSubtotals": {
+        "defaultValue": true
+      },
+      "columnSubtotals": {
+        "defaultValue": true
+      }
+    }
+  },
   "supportsHighlight": true,
   "supportsLandingPage": false,
   "supportsEmptyDataView": true,
@@ -266,48 +317,64 @@
   },
   "objects": {
     "matrix": {
+      "displayName": "Cohort retention",
+      "displayNameKey": "Visual_Caption",
       "properties": {
         "metricMode": {
+          "displayName": "Metric mode",
+          "displayNameKey": "Label_MetricMode",
           "type": {
             "enumeration": [
               {
                 "value": "entity-retention",
-                "displayName": "Entity retention"
+                "displayName": "Entity retention",
+                "displayNameKey": "Metric_EntityRetention"
               },
               {
                 "value": "entity-count",
-                "displayName": "Retained entities (count)"
+                "displayName": "Retained entities (count)",
+                "displayNameKey": "Metric_EntityCount"
               },
               {
                 "value": "supplied-rate",
-                "displayName": "Supplied rate"
+                "displayName": "Supplied rate",
+                "displayNameKey": "Metric_SuppliedRate"
               },
               {
                 "value": "revenue-retention",
-                "displayName": "Revenue retention"
+                "displayName": "Revenue retention",
+                "displayNameKey": "Metric_RevenueRetention"
               },
               {
                 "value": "arpu",
-                "displayName": "ARPU"
+                "displayName": "ARPU",
+                "displayNameKey": "Metric_ARPU"
               },
               {
                 "value": "nrr",
-                "displayName": "Net revenue retention"
+                "displayName": "Net revenue retention",
+                "displayNameKey": "Metric_NRR"
               }
             ]
           }
         },
         "grain": {
+          "displayName": "Grain label",
+          "displayNameKey": "Label_Grain",
           "type": {
             "text": true
           }
         },
         "showStatus": {
+          "displayName": "Show status",
+          "displayNameKey": "Label_ShowStatus",
           "type": {
             "bool": true
           }
         },
         "cellPadding": {
+          "displayName": "Cell padding",
+          "displayNameKey": "Label_CellPadding",
           "type": {
             "numeric": true
           }

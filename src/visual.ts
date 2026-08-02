@@ -62,6 +62,7 @@ export class Visual implements IVisual {
   private tooltipState: TooltipState | null = null;
   private readonly selectedKeys = new Set<string>();
   private readonly hostKeyToInternalKey = new Map<string, string>();
+  private focusedCell: { row: number; column: number } | null = null;
   private disposed = false;
   private readonly listeners: Array<{
     element: HTMLElement;
@@ -108,30 +109,35 @@ export class Visual implements IVisual {
   }
 
   public update(options: VisualUpdateOptions): void {
-    if (this.disposed) return;
-    const dataView = options.dataViews?.[0];
-    this.dataView = dataView;
-    this.matrix = dataView?.matrix as MatrixDataView | undefined;
-    this.settings = readVisualSettings(dataView?.metadata);
-    this.labels = labelsForLocale(
-      this.host.locale,
-      (key) => this.localizationManager?.getDisplayName(key) ?? ""
-    );
-    this.root.setAttribute("aria-label", this.labels.caption);
-    this.root.dir = isRtl(this.host.locale) ? "rtl" : "ltr";
-    this.root.classList.toggle("is-high-contrast", this.host.colorPalette.isHighContrast);
-    this.root.classList.toggle("reduced-motion", prefersReducedMotion());
-    this.root.style.setProperty("--atlyn-cell-padding", `${this.settings.cellPadding}px`);
-    this.applyPalette();
-    this.setViewport(options.viewport);
     this.renderingStarted(options);
 
     try {
+      if (this.disposed) {
+        this.renderingFinished(options);
+        return;
+      }
+      const dataView = options.dataViews?.[0];
+      this.dataView = dataView;
+      this.matrix = dataView?.matrix as MatrixDataView | undefined;
+      this.settings = readVisualSettings(dataView?.metadata);
+      this.labels = labelsForLocale(
+        this.host.locale,
+        (key) => this.localizationManager?.getDisplayName(key) ?? ""
+      );
+      this.root.setAttribute("aria-label", this.labels.caption);
+      this.root.dir = isRtl(this.host.locale) ? "rtl" : "ltr";
+      this.root.classList.toggle("is-high-contrast", this.host.colorPalette.isHighContrast);
+      this.root.classList.toggle("reduced-motion", prefersReducedMotion());
+      this.root.style.setProperty("--atlyn-cell-padding", `${this.settings.cellPadding}px`);
+      this.applyPalette();
+      this.setViewport(options.viewport);
       this.model = buildCohortModel(this.matrix, {
         metricKind: this.settings.metricMode,
         grain: this.settings.grain,
         locale: this.host.locale,
-        hasMoreData: Boolean(dataView?.metadata?.segment)
+        hasMoreData: Boolean(dataView?.metadata?.segment),
+        maxRows: 500,
+        maxColumns: 500
       });
       this.render(this.model);
       this.renderingFinished(options);
@@ -161,6 +167,7 @@ export class Visual implements IVisual {
   }
 
   private render(model: CohortModel): void {
+    this.captureFocusedCell();
     this.clearTable();
     this.statusElement.hidden = !this.settings.showStatus;
     this.tableElement.setAttribute("aria-label", this.tableAriaLabel(model));
@@ -188,9 +195,10 @@ export class Visual implements IVisual {
       empty.textContent = this.labels.noData;
       this.viewportElement.appendChild(empty);
     }
-    if (model.hasMoreData) this.renderLoadMoreButton();
+    if (model.hasMoreData && this.dataView?.metadata?.segment) this.renderLoadMoreButton();
     this.setStatus(this.statusText(model));
     this.updateSelectionState();
+    this.restoreFocus();
   }
 
   private renderColumnHeaders(model: CohortModel): void {
@@ -350,17 +358,18 @@ export class Visual implements IVisual {
       element.className = `status-${cell.status}${row.isSubtotal ? " is-subtotal" : ""}`;
       element.style.padding = `${this.settings.cellPadding}px`;
       if (cell.highlight !== null && cell.highlight !== undefined && !this.host.colorPalette.isHighContrast) {
-        const intensity = Math.max(0, Math.min(1, cell.highlight));
         const paletteColor =
           this.host.colorPalette.getColor?.("highlight")?.value ??
           this.host.colorPalette.foreground?.value ??
           "#118dff";
         element.style.backgroundColor = paletteColor;
-        element.style.opacity = String(0.35 + intensity * 0.65);
-        element.dataset.highlight = String(intensity);
+        element.classList.add("is-highlighted");
+        element.dataset.highlight = String(cell.highlight);
       }
       element.setAttribute("aria-label", this.cellAriaLabel(cell));
-      if (cell.status === "future") element.setAttribute("aria-disabled", "true");
+      if (cell.status === "future" || cell.status === "blank" || cell.status === "missing") {
+        element.setAttribute("aria-disabled", "true");
+      }
       if (cell.status === "invalid") element.setAttribute("aria-invalid", "true");
       this.addListener(element, "click", (event) =>
         this.selectCell(cell, isMultiSelect(event))
@@ -391,6 +400,7 @@ export class Visual implements IVisual {
   }
 
   private selectCell(cell: CohortCell, multiSelect: boolean): void {
+    if (!this.interactionsAllowed()) return;
     if (!cell.identity || cell.status === "future" || cell.status === "invalid") return;
     const selection = this.createHostSelection({ kind: "cell", cell });
     if (!selection) return;
@@ -399,6 +409,7 @@ export class Visual implements IVisual {
   }
 
   private selectRow(row: CohortRow, multiSelect: boolean): void {
+    if (!this.interactionsAllowed()) return;
     const selection = this.createHostSelection({ kind: "row", node: row.node });
     if (!selection) return;
     this.updateLocalSelection(row.key, selection, multiSelect);
@@ -406,6 +417,7 @@ export class Visual implements IVisual {
   }
 
   private selectColumnNode(node: MatrixNodeRef, multiSelect: boolean): void {
+    if (!this.interactionsAllowed()) return;
     const selection = this.createHostSelection({ kind: "column", node });
     if (!selection) return;
     this.updateLocalSelection(node.key, selection, multiSelect);
@@ -440,6 +452,7 @@ export class Visual implements IVisual {
   }
 
   private showCellTooltip(event: Event, cell: CohortCell, isTouchEvent: boolean): void {
+    if (!this.interactionsAllowed()) return;
     const target = event.currentTarget as HTMLElement;
     const identity = cell.identity ? this.createHostSelection({ kind: "cell", cell }) : undefined;
     const dataItems: TooltipDataItem[] = [
@@ -468,6 +481,7 @@ export class Visual implements IVisual {
   }
 
   private showHeaderTooltip(event: Event, node: MatrixNodeRef, isRow: boolean): void {
+    if (!this.interactionsAllowed()) return;
     const target = event.currentTarget as HTMLElement;
     const identity = this.createHostSelection({ kind: isRow ? "row" : "column", node });
     this.showTooltip(
@@ -484,6 +498,7 @@ export class Visual implements IVisual {
     identity: SelectionId | undefined,
     isTouchEvent: boolean
   ): void {
+    if (!this.interactionsAllowed()) return;
     if (this.host.tooltipService.enabled?.() === false) return;
     const rect = target.getBoundingClientRect();
     const identities = identity ? [identity] : [];
@@ -497,7 +512,7 @@ export class Visual implements IVisual {
   }
 
   private moveTooltip(event: Event): void {
-    if (!this.tooltipState) return;
+    if (!this.interactionsAllowed() || !this.tooltipState) return;
     const pointer = event as PointerEvent;
     this.host.tooltipService.move({
       coordinates: [pointer.clientX, pointer.clientY],
@@ -517,10 +532,11 @@ export class Visual implements IVisual {
   }
 
   private showContextMenu(event: Event, target?: ContextTarget): void {
+    if (!this.interactionsAllowed()) return;
     event.preventDefault();
     const mouse = event as MouseEvent;
     const identity = target ? this.createHostSelection(target) : undefined;
-    const selection = identity ?? ({} as SelectionId);
+    const selection = identity ?? this.host.createSelectionIdBuilder().createSelectionId();
     void this.selectionManager.showContextMenu(selection, {
       x: mouse.clientX,
       y: mouse.clientY
@@ -528,12 +544,14 @@ export class Visual implements IVisual {
   }
 
   private toggleNode(node: MatrixNodeRef, kind: "row" | "column"): void {
+    if (!this.interactionsAllowed()) return;
     const selection = this.createHostSelection({ kind, node });
     if (!selection) return;
     void this.selectionManager.toggleExpandCollapse(selection);
   }
 
   private onCellKeydown(event: Event, rowIndex: number, columnIndex: number): void {
+    if (!this.interactionsAllowed()) return;
     const keyboard = event as KeyboardEvent;
     if (keyboard.key === "Enter" || keyboard.key === " ") {
       keyboard.preventDefault();
@@ -549,6 +567,7 @@ export class Visual implements IVisual {
   }
 
   private onHeaderKeydown(event: Event, index: number, isRow: boolean): void {
+    if (!this.interactionsAllowed()) return;
     const keyboard = event as KeyboardEvent;
     if (keyboard.key === "Enter" || keyboard.key === " ") {
       keyboard.preventDefault();
@@ -596,6 +615,23 @@ export class Visual implements IVisual {
     target.focus();
   }
 
+  private captureFocusedCell(): void {
+    const active = document.activeElement;
+    if (!active || !this.tableElement.contains(active)) return;
+    const element = active as HTMLElement;
+    const row = Number(element.dataset.rowIndex);
+    const column = Number(element.dataset.columnIndex);
+    this.focusedCell =
+      Number.isInteger(row) && Number.isInteger(column) ? { row, column } : null;
+  }
+
+  private restoreFocus(): void {
+    if (!this.focusedCell) return;
+    const { row, column } = this.focusedCell;
+    this.focusedCell = null;
+    this.focusCell(row, column);
+  }
+
   private cellAriaLabel(cell: CohortCell): string {
     return `${cell.cohortLabel}, ${cell.periodLabel}, ${cell.displayValue || observationLabel(cell.status, this.labels)}. ${observationLabel(cell.status, this.labels)}.`;
   }
@@ -621,6 +657,7 @@ export class Visual implements IVisual {
     button.className = "atlyn-load-more";
     button.textContent = this.labels.loadMore;
     this.addListener(button, "click", () => {
+      if (!this.interactionsAllowed()) return;
       const accepted = this.host.fetchMoreData(true);
       if (!accepted) this.setStatus(`${this.statusElement.textContent ?? ""} ${this.labels.fetchRejected}`);
     });
@@ -696,6 +733,10 @@ export class Visual implements IVisual {
       const key = element.dataset.selectionKey;
       element.setAttribute("aria-selected", key && key !== "" && this.selectedKeys.has(key) ? "true" : "false");
     });
+  }
+
+  private interactionsAllowed(): boolean {
+    return this.host.hostCapabilities?.allowInteractions !== false;
   }
 
   private renderingStarted(options: VisualUpdateOptions): void {

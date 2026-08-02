@@ -158,6 +158,10 @@ export interface CohortModel {
   diagnostics: string[];
   sourceCount: number;
   hasMoreData: boolean;
+  rowLimit: number;
+  columnLimit: number;
+  rowsTruncated: boolean;
+  columnsTruncated: boolean;
 }
 
 export interface BuildModelOptions {
@@ -169,6 +173,8 @@ export interface BuildModelOptions {
   latestObservablePeriod?: number;
   locale?: string;
   hasMoreData?: boolean;
+  maxRows?: number;
+  maxColumns?: number;
 }
 
 export interface MatrixValueRead {
@@ -191,7 +197,7 @@ export function buildCohortModel(
   if (columnTree.leaves.length === 0) diagnostics.push("No relative period columns were supplied.");
   if (metric.diagnostic) diagnostics.push(metric.diagnostic);
 
-  const columns = columnTree.leaves
+  const allColumns = columnTree.leaves
     .map((node, sourcePosition) => ({
       key: node.key,
       label: node.label || `Period ${sourcePosition}`,
@@ -210,23 +216,48 @@ export function buildCohortModel(
     .sort(compareColumns)
     .map((column, position) => ({ ...column, position }));
 
-  if (columns.some((column) => !validatePeriodIndex(column.periodIndex))) {
+  if (allColumns.some((column) => !validatePeriodIndex(column.periodIndex))) {
     diagnostics.push(
       "Every Period value must be a non-negative integer; presentation labels do not define order."
     );
   }
 
+  if (!allColumns.some((column) => column.periodIndex === 0)) {
+    diagnostics.push("Period 0 is required to establish the original cohort denominator.");
+  }
+
   const duplicatePeriods = new Set<number>();
-  for (const column of columns) {
+  for (const column of allColumns) {
     if (column.periodIndex !== null && duplicatePeriods.has(column.periodIndex)) {
-      diagnostics.push(`Period ${column.periodIndex} occurs more than once.`);
+      diagnostics.push(
+        `Period ${column.periodIndex} occurs more than once; source order is used as the deterministic tie-breaker.`
+      );
     }
     if (column.periodIndex !== null) duplicatePeriods.add(column.periodIndex);
   }
 
-  const modelRows = rowTree.nodes.map((node, rowIndex) => {
+  const maxRows = options.maxRows ?? 500;
+  const maxColumns = options.maxColumns ?? 500;
+  const columns = allColumns.slice(0, maxColumns).map((column, position) => ({
+    ...column,
+    position
+  }));
+  const rowsTruncated = rowTree.nodes.length > maxRows;
+  const columnsTruncated = allColumns.length > maxColumns;
+  if (rowsTruncated) {
+    diagnostics.push(
+      `Only the first ${maxRows} cohort rows are rendered; use the host data reduction to page more.`
+    );
+  }
+  if (columnsTruncated) {
+    diagnostics.push(
+      `Only the first ${maxColumns} relative period columns are rendered; use the host data reduction to page more.`
+    );
+  }
+
+  const allModelRows = rowTree.nodes.map((node, rowIndex) => {
     const rowKey = node.key;
-    const periodZero = columns.find((column) => column.periodIndex === 0);
+    const periodZero = allColumns.find((column) => column.periodIndex === 0);
     const baselineDenominator =
       metric.denominatorIndex === null || periodZero === undefined
         ? null
@@ -242,7 +273,7 @@ export function buildCohortModel(
     const observedPeriods =
       primaryIndex === null
         ? []
-        : columns
+        : allColumns
             .filter((column) =>
               readMatrixValue(node.node.values, column.sourcePosition, primaryIndex, valueSources.length).present
             )
@@ -281,7 +312,10 @@ export function buildCohortModel(
     };
   });
 
-  const latest = options.latestObservablePeriod ?? maximum(modelRows.map((row) => row.latestObservablePeriod));
+  const modelRows = allModelRows.slice(0, maxRows);
+  const latest =
+    options.latestObservablePeriod ??
+    maximum(allModelRows.map((row) => row.latestObservablePeriod));
   return {
     rowTree,
     columnTree,
@@ -293,7 +327,11 @@ export function buildCohortModel(
     latestObservablePeriod: latest,
     diagnostics,
     sourceCount: valueSources.length,
-    hasMoreData: Boolean(options.hasMoreData)
+    hasMoreData: Boolean(options.hasMoreData) || rowsTruncated || columnsTruncated,
+    rowLimit: maxRows,
+    columnLimit: maxColumns,
+    rowsTruncated,
+    columnsTruncated
   };
 }
 
@@ -352,28 +390,34 @@ export function readMatrixValue(
     }
   } else if (isRecord(values)) {
     const direct = values[String(columnPosition)];
+    const hasDirect = Object.prototype.hasOwnProperty.call(values, String(columnPosition));
     if (direct !== undefined) {
       candidates.push({ value: direct, direct: true });
     }
-    const linearKey = String(columnPosition * Math.max(1, sourceCount) + measureIndex);
-    const linear = values[linearKey];
-    if (linear !== undefined && linear !== direct) {
-      candidates.push({ value: linear, direct: false });
-    }
-    if (columnPosition === 0) {
-      const measure = values[String(measureIndex)];
-      if (measure !== undefined && measure !== direct && measure !== linear) {
-        candidates.push({ value: measure, direct: false });
+    if (!hasDirect) {
+      const linearKey = String(columnPosition * Math.max(1, sourceCount) + measureIndex);
+      const linear = values[linearKey];
+      if (linear !== undefined) {
+        candidates.push({ value: linear, direct: false });
       }
-    }
+      if (columnPosition === 0) {
+        const measure = values[String(measureIndex)];
+        if (measure !== undefined && measure !== linear) {
+          candidates.push({ value: measure, direct: false });
+        }
+      }
 
-    for (const [key, candidate] of Object.entries(values)) {
-      const numericKey = Number(key);
-      if (!Number.isInteger(numericKey)) continue;
-      if (numericKey !== columnPosition && numericKey !== columnPosition * Math.max(1, sourceCount) + measureIndex) {
-        continue;
+      for (const [key, candidate] of Object.entries(values)) {
+        const numericKey = Number(key);
+        if (!Number.isInteger(numericKey)) continue;
+        if (
+          numericKey !== columnPosition &&
+          numericKey !== columnPosition * Math.max(1, sourceCount) + measureIndex
+        ) {
+          continue;
+        }
+        candidates.push({ value: candidate, direct: false });
       }
-      candidates.push({ value: candidate, direct: false });
     }
   }
 
@@ -675,7 +719,7 @@ function buildCell(args: {
       : args.baselineDenominator;
   let reason = assessment.reason;
 
-  if (status !== "future" && status !== "invalid") {
+  if (status === "observed" || status === "observed-zero") {
     switch (args.metric.kind) {
       case "entity-retention": {
         const result = retentionRate(assessment.value, args.baselineDenominator);
@@ -722,7 +766,12 @@ function buildCell(args: {
     }
   }
 
-  if (!args.metric.supported && status !== "future") {
+  if (
+    !args.metric.supported &&
+    status !== "future" &&
+    status !== "blank" &&
+    status !== "missing"
+  ) {
     value = null;
     numerator = null;
     denominator = null;
@@ -733,7 +782,10 @@ function buildCell(args: {
   const sourceFormat =
     primaryIndex === null ? args.metric.formatString : args.valueSources[primaryIndex]?.format ?? args.metric.formatString;
   const displayValue =
-    status === "future" || status === "invalid"
+    status === "future" ||
+    status === "invalid" ||
+    status === "blank" ||
+    status === "missing"
       ? ""
       : formatHostValue(value, sourceFormat, args.locale, args.metric.outputPercent);
 
@@ -761,7 +813,10 @@ function buildCell(args: {
     reason,
     metricKind: args.metric.kind,
     identity:
-      status === "future" || status === "invalid"
+      status === "future" ||
+      status === "invalid" ||
+      status === "blank" ||
+      status === "missing"
         ? undefined
         : {
             key: `${args.node.key}|${args.column.key}`,
@@ -824,6 +879,7 @@ function buildMatrixTree(
   const nodes: MatrixNodeRef[] = [];
   const leaves: MatrixNodeRef[] = [];
   const levels = hierarchy?.levels ?? [];
+  const keyOccurrences = new Map<string, number>();
   let leafPosition = 0;
 
   const visit = (
@@ -833,7 +889,13 @@ function buildMatrixTree(
     isRoot: boolean
   ): MatrixNodeRef => {
     const level = isRoot ? -1 : node.level ?? Math.max(0, path.length - 1);
-    const key = stableKey(node.identity, `${orientation}:${path.join(".") || "root"}`);
+    const baseKey = stableKey(
+      node.identity,
+      semanticNodeKey(orientation, node, parentKey, level)
+    );
+    const occurrence = (keyOccurrences.get(baseKey) ?? 0) + 1;
+    keyOccurrences.set(baseKey, occurrence);
+    const key = occurrence === 1 ? baseKey : `${baseKey}#${occurrence}`;
     const ref: MatrixNodeRef = {
       node,
       key,
@@ -961,7 +1023,27 @@ function displayLabel(value: unknown, fallback: string, locale?: string): string
 
 function formatLabelValue(value: unknown, locale?: string): string {
   if (value instanceof Date) return new Intl.DateTimeFormat(locale || "en-US").format(value);
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Intl.NumberFormat(locale || "en-US", { useGrouping: false }).format(value);
+  }
   return String(value);
+}
+
+function semanticNodeKey(
+  orientation: "row" | "column",
+  node: MatrixNode,
+  parentKey: string | undefined,
+  level: number
+): string {
+  const values = (node.levelValues ?? []).map((item) => item.value);
+  return `${orientation}:${JSON.stringify({
+    parentKey: parentKey ?? "root",
+    level,
+    value: node.value,
+    name: node.name,
+    values,
+    subtotal: node.isSubtotal === true
+  })}`;
 }
 
 function selectionIdentity(key: string, kind: "row" | "column"): SelectionIdentity {

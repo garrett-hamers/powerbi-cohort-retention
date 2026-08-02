@@ -12,5 +12,6 @@
     "outDir": "dist",
     "types": ["jest", "node"]
   },
+  "files": ["src/visual.ts"],
   "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.js"]
 }
