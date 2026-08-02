@@ -1,4 +1,5 @@
 const childProcess = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -20,6 +21,25 @@ function run(command, args, options = {}) {
   });
 }
 
+function normalizeTimestamps(directory) {
+  const reproducibleTimestamp = new Date("1980-01-01T12:00:00.000Z");
+  const entries = [];
+
+  function collect(currentDirectory) {
+    for (const entry of fs.readdirSync(currentDirectory, { withFileTypes: true })) {
+      const fullPath = path.join(currentDirectory, entry.name);
+      entries.push(fullPath);
+      if (entry.isDirectory()) collect(fullPath);
+    }
+  }
+
+  collect(directory);
+  entries.sort();
+  for (const entry of entries) {
+    fs.utimesSync(entry, reproducibleTimestamp, reproducibleTimestamp);
+  }
+}
+
 fs.rmSync(dist, { recursive: true, force: true });
 fs.rmSync(staging, { recursive: true, force: true });
 fs.rmSync(temporary, { recursive: true, force: true });
@@ -38,6 +58,7 @@ try {
   fs.cpSync(path.join(root, "stringResources"), path.join(staging, "stringResources"), {
     recursive: true
   });
+  normalizeTimestamps(staging);
   fs.rmSync(output, { force: true });
   if (process.platform === "win32") {
     run("powershell.exe", [
@@ -47,13 +68,13 @@ try {
       `Compress-Archive -Path '${staging}\\*' -DestinationPath '${output}' -Force`
     ]);
   } else {
-    run("zip", ["-qr", output, "."], { cwd: staging });
+    run("zip", ["-X", "-qr", output, "."], { cwd: staging });
   }
   const metadata = {
     guid: JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8")).visual.guid,
     privileges: JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8")).privileges,
     package: path.relative(root, output),
-    packageSha256: require("crypto")
+    packageSha256: crypto
       .createHash("sha256")
       .update(fs.readFileSync(output))
       .digest("hex")
