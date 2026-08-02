@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, "..");
 const pbiviz = readJson("pbiviz.json");
 const capabilities = readJson("capabilities.json");
 const packageJson = readJson("package.json");
+const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), "utf8");
 const metadataPath = path.join(root, "dist", "package-metadata.json");
 const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
 const expectedGuid = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
@@ -33,6 +34,7 @@ assert(
   packageJson.scripts.eslint === "npx eslint . --ext .js,.jsx,.ts,.tsx",
   "the full ESLint gate is not configured"
 );
+assert(packageScript.includes("utimesSync"), "package timestamps are not normalized");
 
 const mapping = capabilities.dataViewMappings?.[0]?.matrix;
 assert(mapping?.rows?.dataReductionAlgorithm?.window?.count === 500, "row reduction must be 500");

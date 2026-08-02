@@ -57,6 +57,7 @@ describe("clean visual package metadata", () => {
     });
     const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), "utf8");
     expect(packageScript).toContain("stringResources");
+    expect(packageScript).toContain("utimesSync");
     const metadataPath = path.join(root, "dist", "package-metadata.json");
     if (fs.existsSync(metadataPath)) {
       const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));

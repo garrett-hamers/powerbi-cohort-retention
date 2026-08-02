@@ -23,6 +23,25 @@ function run(command, args, options = {}) {
   });
 }
 
+function normalizeTimestamps(directory) {
+  const reproducibleTimestamp = new Date("1980-01-01T12:00:00.000Z");
+  const entries = [];
+
+  function collect(currentDirectory) {
+    for (const entry of fs.readdirSync(currentDirectory, { withFileTypes: true })) {
+      const fullPath = path.join(currentDirectory, entry.name);
+      entries.push(fullPath);
+      if (entry.isDirectory()) collect(fullPath);
+    }
+  }
+
+  collect(directory);
+  entries.sort(compareNames);
+  for (const entry of entries) {
+    fs.utimesSync(entry, reproducibleTimestamp, reproducibleTimestamp);
+  }
+}
+
 async function normalizePackage() {
   const source = await JSZip.loadAsync(fs.readFileSync(output));
   const normalized = new JSZip();
@@ -85,6 +104,7 @@ async function main() {
     fs.cpSync(path.join(root, "stringResources"), path.join(staging, "stringResources"), {
       recursive: true
     });
+    normalizeTimestamps(staging);
     fs.rmSync(output, { force: true });
     if (process.platform === "win32") {
       run("powershell.exe", [
@@ -94,7 +114,7 @@ async function main() {
         `Compress-Archive -Path '${staging}\\*' -DestinationPath '${output}' -Force`
       ]);
     } else {
-      run("zip", ["-qr", output, "."], { cwd: staging });
+      run("zip", ["-X", "-qr", output, "."], { cwd: staging });
     }
     await normalizePackage();
     const sourceManifest = getSourceManifest(root);
