@@ -1,52 +1,77 @@
+import "powerbi-visuals-api";
 import {
   assessPeriod,
   ObservationStatus,
+  ratio,
   retentionRate,
   toFiniteNumber,
   validatePeriodIndex
 } from "./semantics";
 
-export type MetricKind =
+export type MetricMode =
   | "entity-retention"
   | "entity-count"
-  | "rate"
-  | "revenue"
+  | "supplied-rate"
+  | "revenue-retention"
   | "arpu"
-  | "nrr"
-  | "unsupported";
+  | "nrr";
 
-export interface MatrixNode {
-  value?: unknown;
-  identity?: unknown;
-  identityFields?: unknown[];
-  levelValues?: Array<{ value?: unknown }>;
-  children?: MatrixNode[];
-  values?: unknown;
-  isSubtotal?: boolean;
-  index?: number;
-}
+export type MetricKind = MetricMode | "unsupported";
+export type MatrixNode = powerbi.DataViewMatrixNode;
 
 export interface MatrixDataView {
-  rows?: { root?: MatrixNode; levels?: unknown[] };
-  columns?: { root?: MatrixNode; levels?: unknown[] };
-  valueSources?: Array<{
-    displayName?: string;
-    queryName?: string;
-    roles?: Record<string, boolean>;
-    type?: unknown;
-    format?: string;
-  }>;
+  rows?: {
+    root?: MatrixNode;
+    levels?: powerbi.DataViewHierarchyLevel[];
+  };
+  columns?: {
+    root?: MatrixNode;
+    levels?: powerbi.DataViewHierarchyLevel[];
+  };
+  valueSources?: powerbi.DataViewMetadataColumn[];
 }
 
 export interface SelectionIdentity {
   key: string;
-  selector?: unknown;
+  selector?: powerbi.data.Selector;
   kind: "cell" | "row" | "column";
+}
+
+export interface TooltipField {
+  sourceIndex: number;
+  displayName: string;
+  value: string;
+  formatString?: string;
+}
+
+export interface MatrixNodeRef {
+  node: MatrixNode;
+  key: string;
+  parentKey?: string;
+  path: number[];
+  level: number;
+  label: string;
+  levelValues: powerbi.PrimitiveValue[];
+  identity?: powerbi.visuals.CustomVisualOpaqueIdentity;
+  children: MatrixNodeRef[];
+  isSubtotal: boolean;
+  isCollapsed?: boolean;
+  canBeExpanded: boolean;
+  leafIndex?: number;
+}
+
+export interface MatrixTree {
+  root?: MatrixNodeRef;
+  nodes: MatrixNodeRef[];
+  leaves: MatrixNodeRef[];
+  levels: powerbi.DataViewHierarchyLevel[];
 }
 
 export interface CohortCell {
   rowIndex: number;
   columnIndex: number;
+  rowNodeKey: string;
+  columnNodeKey: string;
   cohortKey: string;
   periodKey: string;
   cohortLabel: string;
@@ -56,40 +81,74 @@ export interface CohortCell {
   rawValue: number | null;
   numerator: number | null;
   denominator: number | null;
+  denominatorFormatString?: string;
   displayValue: string;
+  formatString?: string;
   status: ObservationStatus;
+  reason?: string;
   metricKind: MetricKind;
   identity?: SelectionIdentity;
   highlight?: number | null;
+  tooltipItems: TooltipField[];
 }
 
 export interface CohortRow {
   key: string;
   label: string;
   sourcePosition: number;
-  identity?: unknown;
+  level: number;
+  parentKey?: string;
+  identity?: powerbi.visuals.CustomVisualOpaqueIdentity;
+  selectionIdentity: SelectionIdentity;
+  node: MatrixNodeRef;
   cells: CohortCell[];
   denominator: number | null;
   latestObservablePeriod: number | null;
   isSubtotal: boolean;
+  isCollapsed?: boolean;
+  canBeExpanded: boolean;
 }
 
 export interface CohortColumn {
   key: string;
   label: string;
-  periodIndex: number | null;
   position: number;
-  identity?: unknown;
+  sourcePosition: number;
+  level: number;
+  parentKey?: string;
+  periodIndex: number | null;
+  identity?: powerbi.visuals.CustomVisualOpaqueIdentity;
+  selectionIdentity: SelectionIdentity;
+  node: MatrixNodeRef;
+  isSubtotal: boolean;
+  isCollapsed?: boolean;
+  canBeExpanded: boolean;
 }
 
 export interface MetricResolution {
   kind: MetricKind;
+  mode?: MetricMode;
   supported: boolean;
   label: string;
+  labelKey: string;
   diagnostic?: string;
+  denominatorDescription: string;
+  numeratorIndex: number | null;
+  denominatorIndex: number | null;
+  valueIndex: number | null;
+  componentIndexes: {
+    expansionIndex: number | null;
+    contractionIndex: number | null;
+    reactivationIndex: number | null;
+  };
+  tooltipIndexes: number[];
+  outputPercent: boolean;
+  formatString?: string;
 }
 
 export interface CohortModel {
+  rowTree: MatrixTree;
+  columnTree: MatrixTree;
   rows: CohortRow[];
   columns: CohortColumn[];
   metric: MetricResolution;
@@ -98,6 +157,7 @@ export interface CohortModel {
   latestObservablePeriod: number | null;
   diagnostics: string[];
   sourceCount: number;
+  hasMoreData: boolean;
 }
 
 export interface BuildModelOptions {
@@ -105,13 +165,16 @@ export interface BuildModelOptions {
   grain?: string;
   numeratorIndex?: number;
   denominatorIndex?: number;
+  valueIndex?: number;
   latestObservablePeriod?: number;
   locale?: string;
+  hasMoreData?: boolean;
 }
 
-interface FlatNode {
-  node: MatrixNode;
-  position: number;
+export interface MatrixValueRead {
+  present: boolean;
+  value: unknown;
+  highlight?: unknown;
 }
 
 export function buildCohortModel(
@@ -119,26 +182,38 @@ export function buildCohortModel(
   options: BuildModelOptions = {}
 ): CohortModel {
   const diagnostics: string[] = [];
-  const rows = flattenLeaves(matrix?.rows?.root);
-  const rawColumns = flattenLeaves(matrix?.columns?.root);
-  const columns = rawColumns
-    .map(({ node, position }) => ({
-      key: stableKey(node.identity, `period-${position}`),
-      label: displayLabel(nodeValue(node), `Period ${position}`),
-      periodIndex: parsePeriodIndex(node),
-      position,
-      identity: node.identity
-    }))
-    .sort((a, b) => {
-      if (a.periodIndex === null && b.periodIndex !== null) return 1;
-      if (a.periodIndex !== null && b.periodIndex === null) return -1;
-      return (a.periodIndex ?? Number.MAX_SAFE_INTEGER) - (b.periodIndex ?? Number.MAX_SAFE_INTEGER);
-    });
+  const rowTree = buildMatrixTree(matrix?.rows, "row", options.locale);
+  const columnTree = buildMatrixTree(matrix?.columns, "column", options.locale);
+  const valueSources = matrix?.valueSources ?? [];
+  const metric = resolveMetric(valueSources, options);
 
-  if (rows.length === 0) diagnostics.push("No cohort rows were supplied.");
-  if (columns.length === 0) diagnostics.push("No relative period columns were supplied.");
+  if (rowTree.nodes.length === 0) diagnostics.push("No cohort rows were supplied.");
+  if (columnTree.leaves.length === 0) diagnostics.push("No relative period columns were supplied.");
+  if (metric.diagnostic) diagnostics.push(metric.diagnostic);
+
+  const columns = columnTree.leaves
+    .map((node, sourcePosition) => ({
+      key: node.key,
+      label: node.label || `Period ${sourcePosition}`,
+      position: sourcePosition,
+      sourcePosition: node.leafIndex ?? sourcePosition,
+      level: node.level,
+      parentKey: node.parentKey,
+      periodIndex: parsePeriodIndex(node.node),
+      identity: node.identity,
+      selectionIdentity: selectionIdentity(node.key, "column"),
+      node,
+      isSubtotal: node.isSubtotal,
+      isCollapsed: node.isCollapsed,
+      canBeExpanded: node.canBeExpanded
+    }))
+    .sort(compareColumns)
+    .map((column, position) => ({ ...column, position }));
+
   if (columns.some((column) => !validatePeriodIndex(column.periodIndex))) {
-    diagnostics.push("Every Period value must be a non-negative integer; text labels do not define order.");
+    diagnostics.push(
+      "Every Period value must be a non-negative integer; presentation labels do not define order."
+    );
   }
 
   const duplicatePeriods = new Set<number>();
@@ -149,332 +224,758 @@ export function buildCohortModel(
     if (column.periodIndex !== null) duplicatePeriods.add(column.periodIndex);
   }
 
-  const metric = resolveMetric(matrix?.valueSources ?? [], options);
-  if (metric.diagnostic) diagnostics.push(metric.diagnostic);
-  const measureIndexes = inferMeasureIndexes(matrix?.valueSources ?? [], options);
-
-  const globalLatest =
-    options.latestObservablePeriod ??
-    maximum(columns.map((column) => column.periodIndex).filter((value): value is number => value !== null));
-  const modelRows: CohortRow[] = rows.map(({ node, position: rowIndex }) => {
-    const rowKey = stableKey(node.identity, `cohort-${rowIndex}`);
-    const label = displayLabel(nodeValue(node), `Cohort ${rowIndex + 1}`);
+  const modelRows = rowTree.nodes.map((node, rowIndex) => {
+    const rowKey = node.key;
     const periodZero = columns.find((column) => column.periodIndex === 0);
-    const denominatorEntry =
-      periodZero === undefined
+    const baselineDenominator =
+      metric.denominatorIndex === null || periodZero === undefined
         ? null
-        : readMeasure(node.values, periodZero.position, measureIndexes.denominatorIndex);
-    const denominator = toFiniteNumber(denominatorEntry?.value);
-    const observedPeriods = columns
-      .filter((column) => readMeasure(node.values, column.position, measureIndexes.numeratorIndex).present)
-      .map((column) => column.periodIndex)
-      .filter((value): value is number => value !== null);
-    const rowLatest = maximum(observedPeriods);
-    const latestObservablePeriod = rowLatest === null ? 0 : rowLatest;
+        : toFiniteNumber(
+            readMatrixValue(
+              node.node.values,
+              periodZero.sourcePosition,
+              metric.denominatorIndex,
+              valueSources.length
+            ).value
+          );
+    const primaryIndex = metric.numeratorIndex ?? metric.valueIndex;
+    const observedPeriods =
+      primaryIndex === null
+        ? []
+        : columns
+            .filter((column) =>
+              readMatrixValue(node.node.values, column.sourcePosition, primaryIndex, valueSources.length).present
+            )
+            .map((column) => column.periodIndex)
+            .filter((value): value is number => value !== null);
+    const latestObservablePeriod = maximum(observedPeriods);
     const cells = columns.map((column, columnIndex) =>
       buildCell({
         node,
         rowIndex,
         column,
         columnIndex,
-        rowKey,
-        label,
-        denominator,
+        baselineDenominator,
         latestObservablePeriod,
         metric,
-        options,
-        numeratorIndex: measureIndexes.numeratorIndex
+        valueSources,
+        locale: options.locale
       })
     );
+
     return {
       key: rowKey,
-      label,
+      label: node.label || `Cohort ${rowIndex + 1}`,
       sourcePosition: rowIndex,
+      level: node.level,
+      parentKey: node.parentKey,
       identity: node.identity,
+      selectionIdentity: selectionIdentity(rowKey, "row"),
+      node,
       cells,
-      denominator,
+      denominator: baselineDenominator,
       latestObservablePeriod,
-      isSubtotal: node.isSubtotal === true
+      isSubtotal: node.isSubtotal,
+      isCollapsed: node.isCollapsed,
+      canBeExpanded: node.canBeExpanded
     };
   });
 
-  const latest = maximum(modelRows.map((row) => row.latestObservablePeriod));
+  const latest = options.latestObservablePeriod ?? maximum(modelRows.map((row) => row.latestObservablePeriod));
   return {
+    rowTree,
+    columnTree,
     rows: modelRows,
     columns,
     metric,
-    grain: options.grain ?? "relative period",
-    denominatorDescription:
-      metric.kind === "entity-retention"
-        ? "original cohort size N(c,0)"
-        : "supplied measure (no denominator inferred)",
-    latestObservablePeriod: latest ?? globalLatest,
+    grain: options.grain ?? "relative integer period",
+    denominatorDescription: metric.denominatorDescription,
+    latestObservablePeriod: latest,
     diagnostics,
-    sourceCount: matrix?.valueSources?.length ?? 0
+    sourceCount: valueSources.length,
+    hasMoreData: Boolean(options.hasMoreData)
   };
 }
 
 export function resolveMetric(
-  valueSources: MatrixDataView["valueSources"] = [],
+  valueSources: powerbi.DataViewMetadataColumn[] = [],
   options: BuildModelOptions = {}
 ): MetricResolution {
   if (options.metricKind) {
-    if (
-      options.metricKind === "entity-retention" &&
-      valueSources.length > 1 &&
-      options.numeratorIndex === undefined &&
-      options.denominatorIndex === undefined &&
-      !hasNamedRetentionMeasures(valueSources)
-    ) {
-      return {
-        kind: "unsupported",
-        supported: false,
-        label: "Ambiguous retention measures",
-        diagnostic: "Set numeratorIndex and denominatorIndex for multiple retention Values."
-      };
+    return metricForMode(normalizeMetricKind(options.metricKind), valueSources, options);
+  }
+
+  const candidates: MetricMode[] = [];
+  if (hasRolePair(valueSources, "Retained", "CohortSize")) candidates.push("entity-retention");
+  if (findRoleIndex(valueSources, "EntityCount") !== null) candidates.push("entity-count");
+  if (hasRolePair(valueSources, "Numerator", "Denominator")) candidates.push("supplied-rate");
+  if (hasRolePair(valueSources, "RevenueNumerator", "RevenueDenominator")) {
+    candidates.push("revenue-retention");
+  }
+  if (findRoleIndex(valueSources, "ARPU") !== null) candidates.push("arpu");
+  if (hasNrrRoles(valueSources)) candidates.push("nrr");
+
+  if (candidates.length === 1) {
+    return metricForMode(candidates[0], valueSources, options);
+  }
+  if (candidates.length > 1) {
+    return unsupportedMetric(
+      valueSources,
+      "Multiple semantic metric role sets are present. Select one explicit Metric mode."
+    );
+  }
+  return unsupportedMetric(
+    valueSources,
+    "Values require an explicit semantic role or Metric mode; display names are never used to infer retention."
+  );
+}
+
+export function readMatrixValue(
+  values: unknown,
+  columnPosition: number,
+  measureIndex: number,
+  sourceCount: number
+): MatrixValueRead {
+  if (values === null || values === undefined || columnPosition < 0 || measureIndex < 0) {
+    return { present: false, value: null };
+  }
+
+  const candidates: Array<{ value: unknown; direct: boolean }> = [];
+  if (Array.isArray(values)) {
+    const direct = values[columnPosition];
+    if (direct !== undefined) {
+      candidates.push({ value: direct, direct: true });
     }
-    return metricResolution(options.metricKind);
-  }
-  if (valueSources.length > 3) {
-    return {
-      kind: "unsupported",
-      supported: false,
-      label: "Unsupported metric",
-      diagnostic: "At most three Values are supported."
-    };
-  }
-  if (valueSources.length > 1) {
-    const names = valueSources.map((source) => (source.displayName ?? "").toLowerCase());
-    const hasRetained = names.some((name) => /retained|active|entity|count/.test(name));
-    const hasCohortSize = names.some((name) => /cohort.?size|denominator|original/.test(name));
-    if (!(hasRetained && hasCohortSize)) {
-      return {
-        kind: "unsupported",
-        supported: false,
-        label: "Ambiguous Values",
-        diagnostic:
-          "Multiple Values are ambiguous. Set an explicit metric mode and numerator/denominator semantics."
-      };
+    const linear = values[columnPosition * Math.max(1, sourceCount) + measureIndex];
+    if (linear !== undefined && linear !== direct) {
+      candidates.push({ value: linear, direct: false });
     }
-    return {
-      kind: "entity-retention",
-      supported: true,
-      label: "Entity retention",
-      diagnostic: "Using explicitly named Retained and Cohort Size Values for N(c,k) / N(c,0)."
-    };
+  } else if (isRecord(values)) {
+    const direct = values[String(columnPosition)];
+    if (direct !== undefined) {
+      candidates.push({ value: direct, direct: true });
+    }
+    const linearKey = String(columnPosition * Math.max(1, sourceCount) + measureIndex);
+    const linear = values[linearKey];
+    if (linear !== undefined && linear !== direct) {
+      candidates.push({ value: linear, direct: false });
+    }
+    if (columnPosition === 0) {
+      const measure = values[String(measureIndex)];
+      if (measure !== undefined && measure !== direct && measure !== linear) {
+        candidates.push({ value: measure, direct: false });
+      }
+    }
+
+    for (const [key, candidate] of Object.entries(values)) {
+      const numericKey = Number(key);
+      if (!Number.isInteger(numericKey)) continue;
+      if (numericKey !== columnPosition && numericKey !== columnPosition * Math.max(1, sourceCount) + measureIndex) {
+        continue;
+      }
+      candidates.push({ value: candidate, direct: false });
+    }
   }
-  const name = (valueSources[0]?.displayName ?? "").toLowerCase();
-  if (/net.?revenue|(^| )nrr($| )/.test(name)) return metricResolution("nrr");
-  if (/arpu|ltv|average revenue/.test(name)) return metricResolution("arpu");
-  if (/revenue|sales|arr/.test(name)) return metricResolution("revenue");
-  if (/rate|retention|percent|%/.test(name)) return metricResolution("rate");
-  if (/count|retained|active|entity/.test(name)) return metricResolution("entity-count");
+
+  for (const candidate of candidates) {
+    const result = readValueCandidate(
+      candidate.value,
+      measureIndex,
+      !candidate.direct || sourceCount <= 1 || measureIndex === 0
+    );
+    if (result) return result;
+  }
+  return { present: false, value: null };
+}
+
+export function formatHostValue(
+  value: number | null,
+  formatString: string | undefined,
+  locale: string | undefined,
+  forcePercent = false
+): string {
+  if (value === null || !Number.isFinite(value)) return "";
+  const format = formatString?.trim() ?? "";
+  const percent = forcePercent || format.includes("%");
+  const currency = currencyCode(format);
+  const fractionDigits = decimalPlaces(format);
+  const options: Intl.NumberFormatOptions = {
+    maximumFractionDigits: fractionDigits ?? (percent ? 1 : 2),
+    minimumFractionDigits: fractionDigits ?? 0
+  };
+  if (percent) {
+    options.style = "percent";
+  } else if (currency) {
+    options.style = "currency";
+    options.currency = currency;
+  }
+  return new Intl.NumberFormat(locale || "en-US", options).format(value);
+}
+
+function metricForMode(
+  mode: MetricMode | "unsupported",
+  valueSources: powerbi.DataViewMetadataColumn[],
+  options: BuildModelOptions
+): MetricResolution {
+  if (mode === "unsupported") {
+    return unsupportedMetric(valueSources, "The selected Metric mode is unsupported.");
+  }
+
+  const tooltipIndexes = roleIndexes(valueSources, "Tooltip");
+  const explicitPrimary = validSourceIndex(options.valueIndex, valueSources.length);
+  const explicitNumerator = validSourceIndex(options.numeratorIndex, valueSources.length);
+  const explicitDenominator = validSourceIndex(options.denominatorIndex, valueSources.length);
+  let numeratorIndex: number | null = null;
+  let denominatorIndex: number | null = null;
+  let valueIndex: number | null = null;
+  let componentIndexes = {
+    expansionIndex: null as number | null,
+    contractionIndex: null as number | null,
+    reactivationIndex: null as number | null
+  };
+
+  switch (mode) {
+    case "entity-retention":
+      numeratorIndex = explicitRoleIndex(valueSources, explicitNumerator, "Retained");
+      denominatorIndex = explicitRoleIndex(valueSources, explicitDenominator, "CohortSize");
+      if (numeratorIndex === null || denominatorIndex === null) {
+        return unsupportedMetric(
+          valueSources,
+          "Entity retention requires Retained and CohortSize roles. Retained must be a distinct-entity count and CohortSize must be N(c,0); no display-name inference is allowed."
+        );
+      }
+      return supportedMetric(
+        mode,
+        "Entity retention",
+        "Metric_EntityRetention",
+        numeratorIndex,
+        denominatorIndex,
+        null,
+        tooltipIndexes,
+        true,
+        valueSources[numeratorIndex]?.format,
+        "N(c,k) / N(c,0), where Retained is a distinct-entity count and CohortSize is the original cohort size."
+      );
+    case "entity-count":
+      valueIndex = explicitRoleIndex(valueSources, explicitPrimary, "EntityCount", "Values");
+      if (valueIndex === null) {
+        return unsupportedMetric(
+          valueSources,
+          "Entity-count mode requires the EntityCount role. It displays a count and never labels it as a retention rate."
+        );
+      }
+      return supportedMetric(
+        mode,
+        "Retained entities (count)",
+        "Metric_EntityCount",
+        null,
+        null,
+        valueIndex,
+        tooltipIndexes,
+        false,
+        valueSources[valueIndex]?.format,
+        "Aggregate distinct-entity count supplied by the EntityCount measure."
+      );
+    case "supplied-rate":
+      numeratorIndex = explicitRoleIndex(valueSources, explicitNumerator, "Numerator");
+      denominatorIndex = explicitRoleIndex(valueSources, explicitDenominator, "Denominator");
+      if (numeratorIndex === null || denominatorIndex === null) {
+        return unsupportedMetric(
+          valueSources,
+          "Supplied-rate mode requires explicit Numerator and Denominator roles; it does not reuse N(c,0)."
+        );
+      }
+      return supportedMetric(
+        mode,
+        "Supplied rate",
+        "Metric_SuppliedRate",
+        numeratorIndex,
+        denominatorIndex,
+        null,
+        tooltipIndexes,
+        true,
+        valueSources[numeratorIndex]?.format,
+        "Numerator / Denominator supplied at each cohort-period intersection."
+      );
+    case "revenue-retention":
+      numeratorIndex = explicitRoleIndex(valueSources, explicitNumerator, "RevenueNumerator");
+      denominatorIndex = explicitRoleIndex(valueSources, explicitDenominator, "RevenueDenominator");
+      if (numeratorIndex === null || denominatorIndex === null) {
+        return unsupportedMetric(
+          valueSources,
+          "Revenue-retention mode requires RevenueNumerator and RevenueDenominator roles; it is not entity retention."
+        );
+      }
+      return supportedMetric(
+        mode,
+        "Revenue retention",
+        "Metric_RevenueRetention",
+        numeratorIndex,
+        denominatorIndex,
+        null,
+        tooltipIndexes,
+        true,
+        valueSources[numeratorIndex]?.format,
+        "Revenue at period k / revenue at period 0 using the explicit revenue roles."
+      );
+    case "arpu":
+      valueIndex = explicitRoleIndex(valueSources, explicitPrimary, "ARPU");
+      if (valueIndex === null) {
+        return unsupportedMetric(
+          valueSources,
+          "ARPU mode requires the ARPU role and is displayed as ARPU, never as retention."
+        );
+      }
+      return supportedMetric(
+        mode,
+        "ARPU",
+        "Metric_ARPU",
+        null,
+        null,
+        valueIndex,
+        tooltipIndexes,
+        false,
+        valueSources[valueIndex]?.format,
+        "Average revenue per user supplied by the ARPU measure."
+      );
+    case "nrr": {
+      valueIndex = explicitRoleIndex(valueSources, explicitPrimary, "NRR");
+      componentIndexes = {
+        expansionIndex: findRoleIndex(valueSources, "NRRExpansion"),
+        contractionIndex: findRoleIndex(valueSources, "NRRContraction"),
+        reactivationIndex: findRoleIndex(valueSources, "NRRReactivation")
+      };
+      if (
+        valueIndex === null ||
+        componentIndexes.expansionIndex === null ||
+        componentIndexes.contractionIndex === null ||
+        componentIndexes.reactivationIndex === null
+      ) {
+        return unsupportedMetric(
+          valueSources,
+          "NRR mode requires NRR, NRRExpansion, NRRContraction, and NRRReactivation roles with explicit semantics."
+        );
+      }
+      const nrrTooltipIndexes = Array.from(
+        new Set([
+          ...tooltipIndexes,
+          componentIndexes.expansionIndex,
+          componentIndexes.contractionIndex,
+          componentIndexes.reactivationIndex
+        ])
+      );
+      return supportedMetric(
+        mode,
+        "Net revenue retention",
+        "Metric_NRR",
+        null,
+        null,
+        valueIndex,
+        nrrTooltipIndexes,
+        true,
+        valueSources[valueIndex]?.format,
+        "NRR is supplied with explicit expansion, contraction, and reactivation roles.",
+        componentIndexes
+      );
+    }
+  }
+}
+
+function supportedMetric(
+  mode: MetricMode,
+  label: string,
+  labelKey: string,
+  numeratorIndex: number | null,
+  denominatorIndex: number | null,
+  valueIndex: number | null,
+  tooltipIndexes: number[],
+  outputPercent: boolean,
+  formatString: string | undefined,
+  denominatorDescription: string,
+  componentIndexes = {
+    expansionIndex: null as number | null,
+    contractionIndex: null as number | null,
+    reactivationIndex: null as number | null
+  }
+): MetricResolution {
   return {
-    kind: "entity-retention",
+    kind: mode,
+    mode,
     supported: true,
-    label: "Entity retention",
-    diagnostic: "Entity retention assumes N(c,k) / N(c,0); use an explicit metric mode for other measures."
+    label,
+    labelKey,
+    numeratorIndex,
+    denominatorIndex,
+    valueIndex,
+    componentIndexes,
+    tooltipIndexes,
+    outputPercent,
+    formatString,
+    denominatorDescription
   };
 }
 
-function metricResolution(kind: MetricKind): MetricResolution {
-  switch (kind) {
-    case "entity-retention":
-      return { kind, supported: true, label: "Entity retention" };
-    case "entity-count":
-      return { kind, supported: true, label: "Retained entities" };
-    case "rate":
-      return { kind, supported: true, label: "Supplied rate" };
-    case "revenue":
-      return { kind, supported: true, label: "Revenue (not entity retention)" };
-    case "arpu":
-      return {
-        kind,
-        supported: false,
-        label: "ARPU/LTV",
-        diagnostic: "ARPU/LTV is a separate metric and is not labelled as retention."
-      };
-    case "nrr":
-      return {
-        kind,
-        supported: false,
-        label: "NRR",
-        diagnostic:
-          "NRR requires explicit expansion, contraction, and reactivation semantics; this MVP does not infer them."
-      };
-    default:
-      return {
-        kind: "unsupported",
-        supported: false,
-        label: "Unsupported metric",
-        diagnostic: "The supplied Values configuration is unsupported or ambiguous."
-      };
-  }
+function unsupportedMetric(
+  valueSources: powerbi.DataViewMetadataColumn[],
+  diagnostic: string
+): MetricResolution {
+  return {
+    kind: "unsupported",
+    supported: false,
+    label: "Unsupported metric",
+    labelKey: "Metric_Unsupported",
+    diagnostic,
+    denominatorDescription: "No denominator inferred.",
+    numeratorIndex: null,
+    denominatorIndex: null,
+    valueIndex: null,
+    componentIndexes: {
+      expansionIndex: null,
+      contractionIndex: null,
+      reactivationIndex: null
+    },
+    tooltipIndexes: roleIndexes(valueSources, "Tooltip"),
+    outputPercent: false
+  };
 }
 
 function buildCell(args: {
-  node: MatrixNode;
+  node: MatrixNodeRef;
   rowIndex: number;
   column: CohortColumn;
   columnIndex: number;
-  rowKey: string;
-  label: string;
-  denominator: number | null;
+  baselineDenominator: number | null;
   latestObservablePeriod: number | null;
   metric: MetricResolution;
-  options: BuildModelOptions;
-  numeratorIndex: number;
+  valueSources: powerbi.DataViewMetadataColumn[];
+  locale?: string;
 }): CohortCell {
-  const entry = readMeasure(args.node.values, args.column.position, args.numeratorIndex);
+  const primaryIndex = args.metric.numeratorIndex ?? args.metric.valueIndex;
+  const primaryEntry =
+    primaryIndex === null
+      ? { present: false, value: null }
+      : readMatrixValue(
+          args.node.node.values,
+          args.column.sourcePosition,
+          primaryIndex,
+          args.valueSources.length
+        );
   const assessment = assessPeriod(
     args.column.periodIndex,
     args.latestObservablePeriod,
-    entry.present,
-    entry.value
+    primaryEntry.present,
+    primaryEntry.value
   );
-  let value: number | null = assessment.value;
+  let status = assessment.status;
+  let value = assessment.value;
   let numerator = assessment.value;
-  let denominator = args.denominator;
-  if (args.metric.kind === "entity-retention" && assessment.status !== "future") {
-    const result = retentionRate(assessment.value, args.denominator);
-    value = result.valid ? result.value : null;
-    if (!result.valid && result.reason) {
-      assessment.status = "invalid";
-      assessment.reason = result.reason;
+  let denominator =
+    args.metric.kind === "supplied-rate"
+      ? readDenominatorForCell(args.node, args.column, args.metric, args.valueSources.length)
+      : args.baselineDenominator;
+  let reason = assessment.reason;
+
+  if (status !== "future" && status !== "invalid") {
+    switch (args.metric.kind) {
+      case "entity-retention": {
+        const result = retentionRate(assessment.value, args.baselineDenominator);
+        value = result.valid ? result.value : null;
+        if (!result.valid) {
+          status = "invalid";
+          reason = result.reason;
+        }
+        break;
+      }
+      case "supplied-rate": {
+        const result = ratio(assessment.value, denominator, "The supplied numerator", "The supplied denominator");
+        value = result.valid ? result.value : null;
+        if (!result.valid) {
+          status = "invalid";
+          reason = result.reason;
+        }
+        break;
+      }
+      case "revenue-retention": {
+        const result = ratio(assessment.value, args.baselineDenominator, "The revenue numerator", "The revenue baseline");
+        value = result.valid ? result.value : null;
+        if (!result.valid) {
+          status = "invalid";
+          reason = result.reason;
+        }
+        break;
+      }
+      case "entity-count":
+      case "arpu":
+      case "nrr":
+        if (assessment.value !== null && assessment.value < 0) {
+          value = null;
+          status = "invalid";
+          reason = `${args.metric.label} cannot be negative.`;
+        }
+        break;
+      default:
+        status = "invalid";
+        value = null;
+        numerator = null;
+        denominator = null;
+        reason = args.metric.diagnostic;
     }
   }
-  if (!args.metric.supported) {
+
+  if (!args.metric.supported && status !== "future") {
     value = null;
     numerator = null;
     denominator = null;
-    assessment.status = "invalid";
+    status = "invalid";
+    reason = args.metric.diagnostic;
   }
-  if (args.metric.kind === "revenue" && assessment.value !== null && assessment.value < 0) {
-    value = null;
-    assessment.status = "invalid";
-    assessment.reason = "Negative revenue is not a valid retention value.";
-  }
+
+  const sourceFormat =
+    primaryIndex === null ? args.metric.formatString : args.valueSources[primaryIndex]?.format ?? args.metric.formatString;
   const displayValue =
-    assessment.status === "future" || assessment.status === "invalid"
+    status === "future" || status === "invalid"
       ? ""
-      : formatValue(value, args.metric.kind);
+      : formatHostValue(value, sourceFormat, args.locale, args.metric.outputPercent);
+
   return {
     rowIndex: args.rowIndex,
     columnIndex: args.columnIndex,
-    cohortKey: args.rowKey,
+    rowNodeKey: args.node.key,
+    columnNodeKey: args.column.key,
+    cohortKey: args.node.key,
     periodKey: args.column.key,
-    cohortLabel: args.label,
+    cohortLabel: args.node.label,
     periodLabel: args.column.label,
     periodIndex: args.column.periodIndex,
     value,
     rawValue: assessment.value,
     numerator,
     denominator,
+    denominatorFormatString:
+      args.metric.denominatorIndex === null
+        ? undefined
+        : args.valueSources[args.metric.denominatorIndex]?.format,
     displayValue,
-    status: assessment.status,
+    formatString: sourceFormat,
+    status,
+    reason,
     metricKind: args.metric.kind,
-    highlight: toFiniteNumber(entry.highlight),
     identity:
-      assessment.status === "future" || assessment.status === "invalid"
+      status === "future" || status === "invalid"
         ? undefined
         : {
-            key: `${args.rowKey}|${args.column.key}`,
+            key: `${args.node.key}|${args.column.key}`,
+            selector: { row: args.node.key, column: args.column.key } as powerbi.data.Selector,
             kind: "cell"
-          }
+          },
+    highlight: toFiniteNumber(primaryEntry.highlight),
+    tooltipItems: buildTooltipItems(
+      args.node,
+      args.column,
+      args.metric.tooltipIndexes,
+      args.valueSources,
+      args.locale
+    )
   };
 }
 
-function flattenLeaves(root: MatrixNode | undefined): FlatNode[] {
-  if (!root) return [];
-  const result: FlatNode[] = [];
-  let position = 0;
-  const visit = (node: MatrixNode): void => {
-    if (node.children && node.children.length > 0) {
-      node.children.forEach(visit);
-      return;
-    }
-    result.push({ node, position: position++ });
-  };
-  visit(root);
-  return result;
-}
-
-function readMeasure(values: unknown, position: number, measureIndex: number): {
-  present: boolean;
-  value: unknown;
-  highlight?: unknown;
-} {
-  if (values === null || values === undefined) return { present: false, value: null };
-  const collection = values as Record<string, unknown> | unknown[];
-  const key = String(position);
-  const present = Array.isArray(collection)
-    ? Object.prototype.hasOwnProperty.call(collection, position)
-    : Object.prototype.hasOwnProperty.call(collection, key);
-  if (!present) return { present: false, value: null };
-  const entry = (collection as any)[position] ?? (collection as any)[key];
-  if (entry && typeof entry === "object" && "values" in entry) {
-    const nested = (entry as { values?: unknown })["values"];
-    if (Array.isArray(nested)) {
-      const measure = nested[measureIndex] as any;
-      return {
-        present: true,
-        value: measure && typeof measure === "object" && "value" in measure ? measure.value : measure,
-        highlight: measure && typeof measure === "object" ? measure.highlight : undefined
-      };
-    }
-    if (nested && typeof nested === "object") {
-      const measure = (nested as any)[measureIndex] ?? (nested as any)[String(measureIndex)];
-      return {
-        present: true,
-        value: measure && typeof measure === "object" && "value" in measure ? measure.value : measure,
-        highlight: measure && typeof measure === "object" ? measure.highlight : undefined
-      };
-    }
-  }
-  if (Array.isArray(entry)) {
-    const measure = entry[measureIndex] as any;
+function buildTooltipItems(
+  row: MatrixNodeRef,
+  column: CohortColumn,
+  tooltipIndexes: number[],
+  valueSources: powerbi.DataViewMetadataColumn[],
+  locale: string | undefined
+): TooltipField[] {
+  return tooltipIndexes.map((sourceIndex) => {
+    const source = valueSources[sourceIndex];
+    const entry = readMatrixValue(row.node.values, column.sourcePosition, sourceIndex, valueSources.length);
+    const numeric = toFiniteNumber(entry.value);
     return {
-      present: true,
-      value: measure && typeof measure === "object" && "value" in measure ? measure.value : measure
+      sourceIndex,
+      displayName: source?.displayName ?? `Tooltip ${sourceIndex + 1}`,
+      value:
+        numeric === null
+          ? entry.present
+            ? String(entry.value ?? "")
+            : ""
+          : formatHostValue(numeric, source?.format, locale),
+      formatString: source?.format
     };
-  }
-  if (entry && typeof entry === "object" && "value" in entry) {
-    const typed = entry as { value?: unknown; highlight?: unknown };
-    return { present: true, value: typed.value, highlight: typed.highlight };
-  }
-  return { present: true, value: entry };
+  });
 }
 
-function nodeValue(node: MatrixNode): unknown {
-  return node.value ?? node.levelValues?.[0]?.value;
+function readDenominatorForCell(
+  node: MatrixNodeRef,
+  column: CohortColumn,
+  metric: MetricResolution,
+  sourceCount: number
+): number | null {
+  if (metric.denominatorIndex === null) return null;
+  return toFiniteNumber(
+    readMatrixValue(node.node.values, column.sourcePosition, metric.denominatorIndex, sourceCount).value
+  );
+}
+
+function buildMatrixTree(
+  hierarchy: MatrixDataView["rows"] | MatrixDataView["columns"] | undefined,
+  orientation: "row" | "column",
+  locale: string | undefined
+): MatrixTree {
+  const nodes: MatrixNodeRef[] = [];
+  const leaves: MatrixNodeRef[] = [];
+  const levels = hierarchy?.levels ?? [];
+  let leafPosition = 0;
+
+  const visit = (
+    node: MatrixNode,
+    parentKey: string | undefined,
+    path: number[],
+    isRoot: boolean
+  ): MatrixNodeRef => {
+    const level = isRoot ? -1 : node.level ?? Math.max(0, path.length - 1);
+    const key = stableKey(node.identity, `${orientation}:${path.join(".") || "root"}`);
+    const ref: MatrixNodeRef = {
+      node,
+      key,
+      parentKey,
+      path,
+      level,
+      label: isRoot ? "" : displayNodeLabel(node, locale),
+      levelValues: (node.levelValues ?? [])
+        .map((item) => item.value)
+        .filter((value): value is powerbi.PrimitiveValue => value !== undefined),
+      identity: node.identity,
+      children: [],
+      isSubtotal: node.isSubtotal === true,
+      isCollapsed: node.isCollapsed,
+      canBeExpanded:
+        !isRoot &&
+        (Boolean(node.children?.length) ||
+          Boolean(levels[level]?.canBeExpanded) ||
+          node.isCollapsed !== undefined),
+      leafIndex: isRoot || node.children?.length ? undefined : leafPosition++
+    };
+
+    if (!isRoot) nodes.push(ref);
+    const children = node.children ?? [];
+    ref.children = children.map((child, index) => visit(child, key, [...path, index], false));
+    if (!isRoot && ref.children.length === 0) leaves.push(ref);
+    return ref;
+  };
+
+  const root = hierarchy?.root ? visit(hierarchy.root, undefined, [], true) : undefined;
+  return { root, nodes, leaves, levels };
+}
+
+function readValueCandidate(
+  candidate: unknown,
+  measureIndex: number,
+  allowDirect: boolean
+): MatrixValueRead | null {
+  if (candidate === undefined) return null;
+  if (Array.isArray(candidate)) {
+    const nested = candidate[measureIndex];
+    return nested === undefined ? null : readValueCandidate(nested, measureIndex, true);
+  }
+  if (isRecord(candidate)) {
+    const sourceIndex = toFiniteNumber(candidate.valueSourceIndex);
+    if (sourceIndex !== null && sourceIndex !== measureIndex) return null;
+    if (Object.prototype.hasOwnProperty.call(candidate, "values")) {
+      const nested = readNestedValues(candidate.values, measureIndex);
+      if (nested) return nested;
+    }
+    if (allowDirect && Object.prototype.hasOwnProperty.call(candidate, "value")) {
+      return {
+        present: true,
+        value: candidate.value,
+        highlight: candidate.highlight
+      };
+    }
+    if (allowDirect && Object.prototype.hasOwnProperty.call(candidate, "highlight")) {
+      return { present: true, value: null, highlight: candidate.highlight };
+    }
+    return null;
+  }
+  return allowDirect ? { present: true, value: candidate } : null;
+}
+
+function readNestedValues(values: unknown, measureIndex: number): MatrixValueRead | null {
+  if (Array.isArray(values)) {
+    const nested = values[measureIndex];
+    return nested === undefined ? null : readValueCandidate(nested, measureIndex, true);
+  }
+  if (isRecord(values)) {
+    const nested = values[String(measureIndex)];
+    return nested === undefined ? null : readValueCandidate(nested, measureIndex, true);
+  }
+  return null;
+}
+
+function compareColumns(
+  left: { periodIndex: number | null; sourcePosition: number },
+  right: { periodIndex: number | null; sourcePosition: number }
+): number {
+  if (left.periodIndex === null && right.periodIndex !== null) return 1;
+  if (left.periodIndex !== null && right.periodIndex === null) return -1;
+  if (left.periodIndex !== null && right.periodIndex !== null && left.periodIndex !== right.periodIndex) {
+    return left.periodIndex - right.periodIndex;
+  }
+  return left.sourcePosition - right.sourcePosition;
+}
+
+function displayNodeLabel(node: MatrixNode, locale: string | undefined): string {
+  const values = (node.levelValues ?? [])
+    .map((item) => item.value)
+    .filter((value): value is powerbi.PrimitiveValue => value !== undefined);
+  if (values.length > 0) {
+    return values.map((value) => formatLabelValue(value, locale)).join(" / ");
+  }
+  return displayLabel(node.value ?? node.name, "", locale);
 }
 
 function parsePeriodIndex(node: MatrixNode): number | null {
-  const value = nodeValue(node);
+  const values = (node.levelValues ?? [])
+    .map((item) => item.value)
+    .filter((value): value is powerbi.PrimitiveValue => value !== undefined)
+    .reverse();
+  for (const value of values) {
+    const parsed = parseIntegerPeriod(value);
+    if (parsed !== null) return parsed;
+  }
+  return parseIntegerPeriod(node.value);
+}
+
+function parseIntegerPeriod(value: unknown): number | null {
   if (typeof value === "number") return validatePeriodIndex(value) ? value : null;
-  if (typeof value === "string" && /^0$|^[1-9]\d*$/.test(value.trim())) {
+  if (typeof value === "string" && /^(0|[1-9]\d*)$/.test(value.trim())) {
     const parsed = Number(value);
     return validatePeriodIndex(parsed) ? parsed : null;
   }
   return null;
 }
 
-function displayLabel(value: unknown, fallback: string): string {
+function displayLabel(value: unknown, fallback: string, locale?: string): string {
   if (value === null || value === undefined || value === "") return fallback;
-  if (value instanceof Date) return value.toLocaleDateString();
-  if (typeof value === "object" && value !== null && "value" in value) {
-    return displayLabel((value as { value?: unknown }).value, fallback);
-  }
+  return formatLabelValue(value, locale);
+}
+
+function formatLabelValue(value: unknown, locale?: string): string {
+  if (value instanceof Date) return new Intl.DateTimeFormat(locale || "en-US").format(value);
   return String(value);
+}
+
+function selectionIdentity(key: string, kind: "row" | "column"): SelectionIdentity {
+  return {
+    key,
+    selector: { key } as powerbi.data.Selector,
+    kind
+  };
 }
 
 function stableKey(value: unknown, fallback: string): string {
   if (value === null || value === undefined) return fallback;
-  try {
-    return JSON.stringify(value, Object.keys(value as object).sort());
-  } catch {
-    return String(value);
-  }
+  const encoded = JSON.stringify(value);
+  return encoded === undefined || encoded === "{}" ? fallback : encoded;
 }
 
 function maximum(values: Array<number | null | undefined>): number | null {
@@ -482,35 +983,70 @@ function maximum(values: Array<number | null | undefined>): number | null {
   return valid.length === 0 ? null : Math.max(...valid);
 }
 
-function formatValue(value: number | null, kind: MetricKind): string {
-  if (value === null || !Number.isFinite(value)) return "";
-  if (kind === "entity-retention" || kind === "rate") return `${Math.round(value * 1000) / 10}%`;
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
+function normalizeMetricKind(kind: MetricKind): MetricMode | "unsupported" {
+  return kind;
 }
 
-function hasNamedRetentionMeasures(
-  valueSources: MatrixDataView["valueSources"] = []
-): boolean {
-  const names = valueSources.map((source) => (source.displayName ?? "").toLowerCase());
+function validSourceIndex(index: number | undefined, sourceCount: number): number | null {
+  return index !== undefined && Number.isInteger(index) && index >= 0 && index < sourceCount ? index : null;
+}
+
+function findRoleIndex(valueSources: powerbi.DataViewMetadataColumn[], role: string): number | null {
+  const index = valueSources.findIndex((source) => source.roles?.[role] === true);
+  return index >= 0 ? index : null;
+}
+
+function explicitRoleIndex(
+  valueSources: powerbi.DataViewMetadataColumn[],
+  explicitIndex: number | null,
+  ...roles: string[]
+): number | null {
+  if (
+    explicitIndex !== null &&
+    roles.some((role) => valueSources[explicitIndex]?.roles?.[role] === true)
+  ) {
+    return explicitIndex;
+  }
+  for (const role of roles) {
+    const index = findRoleIndex(valueSources, role);
+    if (index !== null) return index;
+  }
+  return null;
+}
+
+function roleIndexes(valueSources: powerbi.DataViewMetadataColumn[], role: string): number[] {
+  return valueSources.reduce<number[]>((indexes, source, index) => {
+    if (source.roles?.[role] === true) indexes.push(index);
+    return indexes;
+  }, []);
+}
+
+function hasRolePair(valueSources: powerbi.DataViewMetadataColumn[], first: string, second: string): boolean {
+  return findRoleIndex(valueSources, first) !== null && findRoleIndex(valueSources, second) !== null;
+}
+
+function hasNrrRoles(valueSources: powerbi.DataViewMetadataColumn[]): boolean {
   return (
-    names.some((name) => /retained|active|entity|count/.test(name)) &&
-    names.some((name) => /cohort.?size|denominator|original/.test(name))
+    findRoleIndex(valueSources, "NRR") !== null &&
+    findRoleIndex(valueSources, "NRRExpansion") !== null &&
+    findRoleIndex(valueSources, "NRRContraction") !== null &&
+    findRoleIndex(valueSources, "NRRReactivation") !== null
   );
 }
 
-function inferMeasureIndexes(
-  valueSources: MatrixDataView["valueSources"] = [],
-  options: BuildModelOptions
-): { numeratorIndex: number; denominatorIndex: number } {
-  const names = valueSources.map((source) => (source.displayName ?? "").toLowerCase());
-  const numeratorIndex =
-    options.numeratorIndex ??
-    names.findIndex((name) => /retained|active|entity|count/.test(name));
-  const denominatorIndex =
-    options.denominatorIndex ??
-    names.findIndex((name) => /cohort.?size|denominator|original/.test(name));
-  return {
-    numeratorIndex: numeratorIndex >= 0 ? numeratorIndex : 0,
-    denominatorIndex: denominatorIndex >= 0 ? denominatorIndex : 0
-  };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function currencyCode(formatString: string): string | undefined {
+  if (formatString.includes("$")) return "USD";
+  if (formatString.includes("€")) return "EUR";
+  if (formatString.includes("£")) return "GBP";
+  if (formatString.includes("¥")) return "JPY";
+  return undefined;
+}
+
+function decimalPlaces(formatString: string): number | undefined {
+  const match = formatString.match(/\.(0+|#+)/);
+  return match ? match[1].length : undefined;
 }

@@ -1,86 +1,383 @@
-import { buildCohortModel, resolveMetric } from "../src/model";
+import {
+  buildCohortModel,
+  MatrixDataView,
+  resolveMetric
+} from "../src/model";
 
-function matrix(values: unknown, valueSources = [{ displayName: "Retained entities" }]) {
+interface NodeInput {
+  value?: unknown;
+  name?: string;
+  identity?: unknown;
+  values?: unknown;
+  children?: NodeInput[];
+  level?: number;
+  levelValues?: Array<{ value: unknown }>;
+  isSubtotal?: boolean;
+  isCollapsed?: boolean;
+}
+
+function node(input: NodeInput): powerbi.DataViewMatrixNode {
+  return input as unknown as powerbi.DataViewMatrixNode;
+}
+
+function source(
+  displayName: string,
+  roles: Record<string, boolean> = {},
+  format?: string
+): powerbi.DataViewMetadataColumn {
+  return { displayName, roles, format } as unknown as powerbi.DataViewMetadataColumn;
+}
+
+function matrix(
+  rowNodes: NodeInput[],
+  columnNodes: NodeInput[],
+  valueSources: powerbi.DataViewMetadataColumn[]
+): MatrixDataView {
   return {
-    rows: {
-      root: {
-        children: [
-          {
-            value: "2025-01",
-            identity: { key: "cohort-a" },
-            values
-          }
-        ]
-      }
-    },
-    columns: {
-      root: {
-        children: [
-          { value: 0, identity: { key: "p0" } },
-          { value: 1, identity: { key: "p1" } },
-          { value: 2, identity: { key: "p2" } },
-          { value: 3, identity: { key: "p3" } }
-        ]
-      }
-    },
+    rows: { root: node({ children: rowNodes }) },
+    columns: { root: node({ children: columnNodes }) },
     valueSources
   };
 }
 
+function oneMeasureValues(values: Array<number | null | undefined>): unknown[] {
+  return values.map((value) => (value === undefined ? undefined : { value }));
+}
+
+function multiMeasureValues(values: Array<Array<number | null | undefined>>): Record<string, unknown> {
+  return values.reduce<Record<string, unknown>>((result, periodValues, periodIndex) => {
+    result[String(periodIndex)] = {
+      values: periodValues.map((value) => (value === undefined ? undefined : { value }))
+    };
+    return result;
+  }, {});
+}
+
+function linearMeasureValues(values: Array<number | null | undefined>): unknown[] {
+  return values.map((value, index) => ({
+    value,
+    valueSourceIndex: index % 2
+  }));
+}
+
+const periods = [
+  { value: 2, identity: { key: "p2" } },
+  { value: 0, identity: { key: "p0" } },
+  { value: 1, identity: { key: "p1" } },
+  { value: 3, identity: { key: "p3" } }
+];
+
 describe("cohort matrix model", () => {
-  test("sorts numeric periods rather than presentation labels", () => {
-    const data = matrix([{ value: 10 }, { value: 5 }, { value: 0 }]);
-    const model = buildCohortModel(data, { metricKind: "entity-retention" });
+  test("sorts numeric periods by value while retaining source positions", () => {
+    const data = matrix(
+      [
+        {
+          value: "2025-01",
+          identity: { key: "cohort-a" },
+          values: oneMeasureValues([2, 10, 5, undefined])
+        }
+      ],
+      periods,
+      [source("Any display name", { EntityCount: true })]
+    );
+    const model = buildCohortModel(data, { metricKind: "entity-count" });
+
     expect(model.columns.map((column) => column.periodIndex)).toEqual([0, 1, 2, 3]);
+    expect(model.rows[0].cells.map((cell) => cell.value)).toEqual([10, 5, 2, null]);
     expect(model.rows[0].cells.map((cell) => cell.status)).toEqual([
       "observed",
       "observed",
+      "observed",
+      "future"
+    ]);
+  });
+
+  test("uses roles, not display names, for distinct entity retention", () => {
+    const data = matrix(
+      [
+        {
+          value: "2025-01",
+          identity: { key: "cohort-a" },
+          values: multiMeasureValues([
+            [4, 10],
+            [2, 10]
+          ])
+        }
+      ],
+      [{ value: 0, identity: { key: "p0" } }, { value: 1, identity: { key: "p1" } }],
+      [source("Revenue", { Retained: true }), source("Size", { CohortSize: true })]
+    );
+    const model = buildCohortModel(data);
+
+    expect(model.metric.kind).toBe("entity-retention");
+    expect(model.rows[0].cells.map((cell) => cell.value)).toEqual([0.4, 0.2]);
+    expect(model.denominatorDescription).toMatch(/distinct-entity count/i);
+  });
+
+  test("does not infer a metric from a fragile display name", () => {
+    const data = matrix(
+      [{ value: "2025-01", identity: { key: "cohort-a" }, values: oneMeasureValues([4]) }],
+      [{ value: 0, identity: { key: "p0" } }],
+      [source("Retained entities")]
+    );
+
+    const model = buildCohortModel(data);
+    expect(model.metric.supported).toBe(false);
+    expect(model.metric.diagnostic).toMatch(/semantic role|Metric mode/i);
+  });
+
+  test("keeps count, supplied rate, revenue retention, ARPU, and NRR distinct", () => {
+    const count = buildCohortModel(
+      matrix(
+        [{ value: "A", values: oneMeasureValues([1234]) }],
+        [{ value: 0, identity: { key: "p0" } }],
+        [source("Revenue", { EntityCount: true }, "#,##0")]
+      ),
+      { metricKind: "entity-count" }
+    );
+    expect(count.metric.kind).toBe("entity-count");
+    expect(count.rows[0].cells[0].displayValue).toBe("1,234");
+
+    const valuesMode = buildCohortModel(
+      matrix(
+        [{ value: "A", values: oneMeasureValues([7]) }],
+        [{ value: 0 }],
+        [source("Any measure", { Values: true })]
+      ),
+      { metricKind: "entity-count" }
+    );
+    expect(valuesMode.metric.kind).toBe("entity-count");
+    expect(valuesMode.rows[0].cells[0].value).toBe(7);
+
+    const untypedExplicitValue = buildCohortModel(
+      matrix(
+        [{ value: "A", values: oneMeasureValues([7]) }],
+        [{ value: 0 }],
+        [source("Any measure")]
+      ),
+      { metricKind: "entity-count", valueIndex: 0 }
+    );
+    expect(untypedExplicitValue.metric.supported).toBe(false);
+
+    const suppliedRate = buildCohortModel(
+      matrix(
+        [
+          {
+            value: "A",
+            values: multiMeasureValues([
+              [20, 100],
+              [10, 50]
+            ])
+          }
+        ],
+        [{ value: 0 }, { value: 1 }],
+        [source("Anything", { Numerator: true }), source("Anything else", { Denominator: true })]
+      ),
+      { metricKind: "supplied-rate" }
+    );
+    expect(suppliedRate.rows[0].cells.map((cell) => cell.value)).toEqual([0.2, 0.2]);
+
+    const linearSuppliedRate = buildCohortModel(
+      matrix(
+        [{ value: "A", values: linearMeasureValues([20, 100, 10, 50]) }],
+        [{ value: 0 }, { value: 1 }],
+        [source("Anything", { Numerator: true }), source("Anything else", { Denominator: true })]
+      ),
+      { metricKind: "supplied-rate" }
+    );
+    expect(linearSuppliedRate.rows[0].cells.map((cell) => cell.value)).toEqual([0.2, 0.2]);
+
+    const revenue = buildCohortModel(
+      matrix(
+        [
+          {
+            value: "A",
+            values: multiMeasureValues([
+              [100, 100],
+              [80, 100]
+            ])
+          }
+        ],
+        [{ value: 0 }, { value: 1 }],
+        [source("Amount", { RevenueNumerator: true }), source("Amount", { RevenueDenominator: true })]
+      ),
+      { metricKind: "revenue-retention" }
+    );
+    expect(revenue.rows[0].cells.map((cell) => cell.value)).toEqual([1, 0.8]);
+
+    const arpu = buildCohortModel(
+      matrix(
+        [{ value: "A", values: oneMeasureValues([50, 60]) }],
+        [{ value: 0 }, { value: 1 }],
+        [source("Amount", { ARPU: true }, "$0.00")]
+      ),
+      { metricKind: "arpu" }
+    );
+    expect(arpu.metric.kind).toBe("arpu");
+    expect(arpu.rows[0].cells.map((cell) => cell.value)).toEqual([50, 60]);
+
+    const nrr = buildCohortModel(
+      matrix(
+        [
+          {
+            value: "A",
+            values: multiMeasureValues([
+              [1.1, 0.2, -0.05, 0.05],
+              [1.2, 0.3, -0.1, 0.1]
+            ])
+          }
+        ],
+        [{ value: 0 }, { value: 1 }],
+        [
+          source("Supplied NRR", { NRR: true }),
+          source("Expansion", { NRRExpansion: true }),
+          source("Contraction", { NRRContraction: true }),
+          source("Reactivation", { NRRReactivation: true })
+        ]
+      ),
+      { metricKind: "nrr" }
+    );
+    expect(nrr.metric.kind).toBe("nrr");
+    expect(nrr.metric.componentIndexes).toEqual({
+      expansionIndex: 1,
+      contractionIndex: 2,
+      reactivationIndex: 3
+    });
+    expect(nrr.rows[0].cells.map((cell) => cell.value)).toEqual([1.1, 1.2]);
+  });
+
+  test("preserves sparse observed-zero states through the latest observation", () => {
+    const model = buildCohortModel(
+      matrix(
+        [
+          {
+            value: "A",
+            values: multiMeasureValues([
+              [10, 10],
+              [undefined, 10],
+              [0, 10],
+              [undefined, undefined]
+            ])
+          }
+        ],
+        [
+          { value: 0 },
+          { value: 1 },
+          { value: 2 },
+          { value: 3 }
+        ],
+        [source("Retained", { Retained: true }), source("Size", { CohortSize: true })]
+      ),
+      { metricKind: "entity-retention" }
+    );
+
+    expect(model.rows[0].cells.map((cell) => cell.status)).toEqual([
+      "observed",
+      "observed-zero",
       "observed-zero",
       "future"
     ]);
-    expect(model.rows[0].cells[2].identity).toBeDefined();
-    expect(model.rows[0].cells[3].identity).toBeUndefined();
+    expect(model.rows[0].cells.map((cell) => cell.value)).toEqual([1, 0, 0, null]);
   });
 
-  test("uses a stable row/column identity key for cell selection", () => {
-    const model = buildCohortModel(matrix([{ value: 10 }, { value: 5 }]), {
-      metricKind: "entity-retention"
-    });
-    expect(model.rows[0].cells[1].identity).toMatchObject({
-      key: '{"key":"cohort-a"}|{"key":"p1"}',
+  test("preserves host highlight values with the selected metric", () => {
+    const model = buildCohortModel(
+      matrix(
+        [
+          {
+            value: "A",
+            values: [{ value: 4, highlight: 0.75 }]
+          }
+        ],
+        [{ value: 0 }],
+        [source("Count", { EntityCount: true })]
+      ),
+      { metricKind: "entity-count" }
+    );
+
+    expect(model.rows[0].cells[0].highlight).toBe(0.75);
+  });
+
+  test("preserves nested nodes, levels, parents, subtotals, and identities", () => {
+    const data = matrix(
+      [
+        {
+          value: "2025",
+          level: 0,
+          levelValues: [{ value: "2025" }],
+          identity: { key: "year-2025" },
+          isSubtotal: true,
+          children: [
+            {
+              value: "January",
+              level: 1,
+              levelValues: [{ value: "2025" }, { value: "January" }],
+              identity: { key: "month-jan" },
+              values: oneMeasureValues([10, 5]),
+              isCollapsed: false
+            }
+          ]
+        }
+      ],
+      [
+        {
+          value: "Half 1",
+          level: 0,
+          levelValues: [{ value: "Half 1" }],
+          identity: { key: "half-1" },
+          children: [
+            {
+              value: 0,
+              level: 1,
+              levelValues: [{ value: "Half 1" }, { value: 0 }],
+              identity: { key: "period-0" }
+            },
+            {
+              value: 1,
+              level: 1,
+              levelValues: [{ value: "Half 1" }, { value: 1 }],
+              identity: { key: "period-1" }
+            }
+          ]
+        }
+      ],
+      [source("Retained", { EntityCount: true })]
+    );
+    data.rows!.levels = [
+      { canBeExpanded: true, sources: [] },
+      { canBeExpanded: false, sources: [] }
+    ] as powerbi.DataViewHierarchyLevel[];
+    data.columns!.levels = [
+      { canBeExpanded: true, sources: [] },
+      { canBeExpanded: false, sources: [] }
+    ] as powerbi.DataViewHierarchyLevel[];
+
+    const model = buildCohortModel(data, { metricKind: "entity-count" });
+
+    expect(model.rowTree.nodes.map((item) => item.key)).toEqual([
+      '{"key":"year-2025"}',
+      '{"key":"month-jan"}'
+    ]);
+    expect(model.rowTree.nodes[1].parentKey).toBe('{"key":"year-2025"}');
+    expect(model.rowTree.nodes[0].isSubtotal).toBe(true);
+    expect(model.rowTree.nodes[0].canBeExpanded).toBe(true);
+    expect(model.columnTree.nodes).toHaveLength(3);
+    expect(model.columnTree.leaves).toHaveLength(2);
+    expect(model.columns.map((column) => column.periodIndex)).toEqual([0, 1]);
+    expect(model.columns[0].parentKey).toBe('{"key":"half-1"}');
+    expect(model.rows[1].cells[0].identity).toMatchObject({
+      key: '{"key":"month-jan"}|{"key":"period-0"}',
       kind: "cell"
     });
   });
 
-  test("surfaces ambiguous multiple values instead of guessing their meaning", () => {
-    const model = buildCohortModel(
-      matrix([{ values: [{ value: 4 }, { value: 10 }] }], [
-        { displayName: "Measure A" },
-        { displayName: "Measure B" }
-      ])
-    );
-    expect(model.metric.supported).toBe(false);
-    expect(model.diagnostics.join(" ")).toMatch(/ambiguous/i);
-  });
-
-  test("uses explicitly named retained and cohort-size measures as separate roles", () => {
-    const model = buildCohortModel(
-      matrix(
-        {
-          0: { values: [{ value: 4 }, { value: 10 }] },
-          1: { values: [{ value: 2 }, { value: 10 }] }
-        },
-        [{ displayName: "Retained entities" }, { displayName: "Cohort Size" }]
-      )
-    );
-    expect(model.metric.kind).toBe("entity-retention");
-    expect(model.rows[0].cells[0].value).toBe(0.4);
-    expect(model.rows[0].cells[1].value).toBe(0.2);
-  });
-
-  test("does not label revenue, ARPU, or NRR as entity retention", () => {
-    expect(resolveMetric([{ displayName: "Revenue" }]).label).toMatch(/not entity retention/i);
-    expect(resolveMetric([{ displayName: "ARPU" }]).supported).toBe(false);
-    expect(resolveMetric([{ displayName: "NRR" }]).supported).toBe(false);
+  test("reports ambiguous role sets instead of silently choosing one", () => {
+    const result = resolveMetric([
+      source("A", { EntityCount: true }),
+      source("B", { Numerator: true }),
+      source("C", { Denominator: true })
+    ]);
+    expect(result.supported).toBe(false);
+    expect(result.diagnostic).toMatch(/multiple semantic metric role sets/i);
   });
 });

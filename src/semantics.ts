@@ -41,7 +41,7 @@ export function assessPeriod(
     return { status: "future", value: null };
   }
 
-  if (numericValue === null) {
+  if (!present || numericValue === null) {
     return { status: "observed-zero", value: 0 };
   }
 
@@ -51,53 +51,70 @@ export function assessPeriod(
   };
 }
 
-export function denominatorFromCohortSize(cohortSize: unknown): DenominatorResult {
-  const denominator = toFiniteNumber(cohortSize);
-  if (denominator === null) {
-    return {
-      value: null,
-      valid: false,
-      reason: "The original cohort size is missing or not numeric."
-    };
-  }
-  if (denominator < 0) {
-    return {
-      value: null,
-      valid: false,
-      reason: "The original cohort size cannot be negative."
-    };
-  }
-  if (denominator === 0) {
-    return {
-      value: null,
-      valid: false,
-      reason: "The original cohort size is zero, so retention is undefined."
-    };
-  }
-  return { value: denominator, valid: true };
+export function retentionRate(numerator: unknown, cohortSize: unknown): DenominatorResult {
+  return ratio(numerator, cohortSize, "The retained entity count", "The original cohort size");
 }
 
-export function retentionRate(numerator: unknown, cohortSize: unknown): DenominatorResult {
-  const denominator = denominatorFromCohortSize(cohortSize);
-  if (!denominator.valid || denominator.value === null) {
-    return denominator;
+export function ratio(
+  numerator: unknown,
+  denominator: unknown,
+  numeratorLabel = "The numerator",
+  denominatorLabel = "The denominator"
+): DenominatorResult {
+  const denominatorResult = denominatorFromValue(denominator, denominatorLabel);
+  if (!denominatorResult.valid || denominatorResult.value === null) {
+    return denominatorResult;
   }
   const numeratorValue = toFiniteNumber(numerator);
   if (numeratorValue === null) {
     return {
       value: null,
       valid: false,
-      reason: "The retained entity count is missing or not numeric."
+      reason: `${numeratorLabel} is missing or not numeric.`
     };
   }
   if (numeratorValue < 0) {
     return {
       value: null,
       valid: false,
-      reason: "The retained entity count cannot be negative."
+      reason: `${numeratorLabel} cannot be negative.`
     };
   }
-  return { value: numeratorValue / denominator.value, valid: true };
+  return { value: numeratorValue / denominatorResult.value, valid: true };
+}
+
+function denominatorFromValue(value: unknown, label: string): DenominatorResult {
+  const denominator = toFiniteNumber(value);
+  if (denominator === null) {
+    return {
+      value: null,
+      valid: false,
+      reason: `${label} is missing or not numeric.`
+    };
+  }
+  if (denominator < 0) {
+    return {
+      value: null,
+      valid: false,
+      reason: `${label} cannot be negative.`
+    };
+  }
+  if (denominator === 0) {
+    return {
+      value: null,
+      valid: false,
+      reason: `${label} is zero, so the ratio is undefined.`
+    };
+  }
+  return { value: denominator, valid: true };
+}
+
+export function denominatorFromCohortSize(cohortSize: unknown): DenominatorResult {
+  const denominator = denominatorFromValue(cohortSize, "The original cohort size");
+  if (!denominator.valid || denominator.value === null) {
+    return denominator;
+  }
+  return denominator;
 }
 
 export function toFiniteNumber(value: unknown): number | null {

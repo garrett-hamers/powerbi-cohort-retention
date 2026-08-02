@@ -8,6 +8,10 @@
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  --atlyn-cell-padding: 6px;
+  --atlyn-foreground: currentColor;
+  --atlyn-background: Canvas;
+  --atlyn-foreground-selected: Highlight;
 }
 
 .atlyn-status {
@@ -23,6 +27,7 @@
   min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
 }
 
 .atlyn-matrix {
@@ -42,7 +47,7 @@
 .atlyn-matrix td {
   border: 1px solid #d9d9d9;
   min-width: 72px;
-  padding: 6px 8px;
+  padding: var(--atlyn-cell-padding);
   text-align: right;
   vertical-align: middle;
   white-space: nowrap;
@@ -65,6 +70,26 @@
 
 .atlyn-matrix td {
   transition: background-color 120ms ease;
+}
+
+.atlyn-matrix [aria-selected="true"] {
+  outline: 2px solid var(--atlyn-foreground-selected);
+  outline-offset: -2px;
+}
+
+.atlyn-matrix .is-subtotal {
+  font-weight: 600;
+}
+
+.atlyn-expand {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  margin-inline-end: 4px;
+  min-width: 18px;
+  padding: 0;
 }
 
 .atlyn-matrix td:focus-visible,
@@ -96,30 +121,44 @@
   margin: 16px;
 }
 
+.atlyn-load-more {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  cursor: pointer;
+  margin: 4px 8px;
+  padding: 4px 8px;
+}
+
 .is-high-contrast {
-  background: Canvas;
-  color: CanvasText;
+  background: var(--atlyn-background);
+  color: var(--atlyn-foreground);
 }
 
 .is-high-contrast .atlyn-matrix th,
 .is-high-contrast .atlyn-matrix td {
-  background: Canvas;
-  border-color: CanvasText;
-  color: CanvasText;
+  background: var(--atlyn-background);
+  border-color: var(--atlyn-foreground);
+  color: var(--atlyn-foreground);
 }
 
 .is-high-contrast .atlyn-matrix td.status-future {
   background: repeating-linear-gradient(
     -45deg,
-    Canvas,
-    Canvas 5px,
-    CanvasText 5px,
-    CanvasText 7px
+    var(--atlyn-background),
+    var(--atlyn-background) 5px,
+    var(--atlyn-foreground) 5px,
+    var(--atlyn-foreground) 7px
   );
 }
 
 .is-high-contrast .atlyn-matrix td {
   opacity: 1 !important;
+}
+
+.is-high-contrast .atlyn-matrix [aria-selected="true"] {
+  outline-color: var(--atlyn-foreground-selected);
 }
 
 .reduced-motion .atlyn-matrix td {
@@ -145,6 +184,6 @@
   .atlyn-matrix th,
   .atlyn-matrix td {
     min-width: 64px;
-    padding: 5px;
+    padding: max(4px, var(--atlyn-cell-padding));
   }
 }

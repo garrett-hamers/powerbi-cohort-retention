@@ -32,6 +32,9 @@ try {
   copy(path.join(root, "style", "visual.less"), path.join(staging, "style", "visual.less"));
   copy(path.join(dist, "visual.js"), path.join(staging, "visual.js"));
   copy(path.join(root, "assets", "icon.png"), path.join(staging, "assets", "icon.png"));
+  fs.cpSync(path.join(root, "stringResources"), path.join(staging, "stringResources"), {
+    recursive: true
+  });
   fs.rmSync(output, { force: true });
   if (process.platform === "win32") {
     run("powershell.exe", [
