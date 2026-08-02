@@ -1,0 +1,77 @@
+{
+  "privileges": [],
+  "dataRoles": [
+    {
+      "displayName": "Cohort",
+      "name": "Cohort",
+      "kind": "Grouping"
+    },
+    {
+      "displayName": "Period",
+      "name": "Period",
+      "kind": "Grouping"
+    },
+    {
+      "displayName": "Values",
+      "name": "Values",
+      "kind": "Measure"
+    },
+    {
+      "displayName": "Tooltip",
+      "name": "Tooltip",
+      "kind": "GroupingOrMeasure"
+    }
+  ],
+  "dataViewMappings": [
+    {
+      "conditions": [
+        {
+          "Cohort": {
+            "max": 1
+          },
+          "Period": {
+            "max": 1
+          },
+          "Values": {
+            "min": 1,
+            "max": 3
+          },
+          "Tooltip": {
+            "max": 5
+          }
+        }
+      ],
+      "matrix": {
+        "rows": {
+          "for": {
+            "in": "Cohort"
+          }
+        },
+        "columns": {
+          "for": {
+            "in": "Period"
+          }
+        },
+        "values": {
+          "select": [
+            {
+              "for": {
+                "in": "Values"
+              }
+            },
+            {
+              "for": {
+                "in": "Tooltip"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "supportsHighlight": true,
+  "supportsLandingPage": false,
+  "supportsEmptyDataView": true,
+  "supportsKeyboardFocus": true,
+  "objects": {}
+}
