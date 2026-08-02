@@ -7,7 +7,7 @@
     "build": "webpack --mode production",
     "test": "jest --runInBand",
     "typecheck": "tsc --noEmit",
-    "eslint": "eslint .",
+    "eslint": "npx eslint . --ext .js,.jsx,.ts,.tsx",
     "lint": "npm run eslint",
     "powerbi:version": "pbiviz --version",
     "package": "npm run powerbi:version && node scripts/package.js && npm run certification:audit",
