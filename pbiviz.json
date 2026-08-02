@@ -1,0 +1,26 @@
+{
+  "visual": {
+    "name": "atlynCohortRetention",
+    "displayName": "Atlyn Cohort Retention",
+    "guid": "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11",
+    "visualClassName": "Visual",
+    "version": "1.0.0",
+    "description": "A denominator-transparent cohort retention matrix.",
+    "supportUrl": "https://github.com/garrett-hamers/powerbi-cohort-retention",
+    "gitHubUrl": "https://github.com/garrett-hamers/powerbi-cohort-retention"
+  },
+  "apiVersion": "5.11.1",
+  "author": {
+    "name": "Atlyn",
+    "email": "support@atlyn.example"
+  },
+  "assets": {
+    "icon": "assets/icon.png"
+  },
+  "externalJS": [],
+  "style": "style/visual.less",
+  "capabilities": "capabilities.json",
+  "dependencies": {
+    "powerbi-visuals-api": "5.11.1"
+  }
+}
