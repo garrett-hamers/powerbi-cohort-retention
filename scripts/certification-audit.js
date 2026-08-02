@@ -27,7 +27,10 @@ assert(fs.existsSync(packagePath) && fs.statSync(packagePath).size > 0, "the .pb
 assert(fs.existsSync(metadataPath), "package metadata is missing");
 assert(packageJson.devDependencies["powerbi-visuals-tools"], "direct Power BI tooling is missing");
 assert(packageJson.devDependencies["eslint-plugin-powerbi-visuals"], "Power BI ESLint plugin is missing");
-assert(packageJson.scripts.eslint === "eslint .", "the full ESLint gate is not configured");
+assert(
+  packageJson.scripts.eslint === "npx eslint . --ext .js,.jsx,.ts,.tsx",
+  "the full ESLint gate is not configured"
+);
 
 const mapping = capabilities.dataViewMappings?.[0]?.matrix;
 assert(mapping?.rows?.dataReductionAlgorithm?.window?.count === 500, "row reduction must be 500");
