@@ -12,9 +12,12 @@ The visual's canonical mapping is:
 - **Tooltip**: optional detail fields
 
 Entity retention is `N(c,k) / N(c,0)`. A future period is rendered as an
-observation-aware blank; an observed period with no qualifying activity is
-rendered as zero. The matrix discloses its grain, denominator, and latest
-observable period in the status line and tooltips.
+observation-aware blank; a missing historical intersection, an explicit BLANK,
+an observed zero, and an invalid value remain distinct states. The matrix
+discloses its grain, denominator, and latest observable period in the status
+line and tooltips. Invalid or zero denominators never produce a fabricated
+retention rate, and entity retention rejects retained counts above the original
+cohort size.
 
 ## Metric contract
 
@@ -35,11 +38,14 @@ formatting pane:
 integer index; labels such as `Month 0` are presentation only. `Tooltip` fields
 are passed through to the host tooltip with their host format strings.
 
-The matrix uses a bounded 500-row and 500-column reduction window. When the host
-returns a segment, the visual exposes a **Load more data** action and calls
-`fetchMoreData`; it does not pretend that a truncated view is complete. Drill
-declarations are intentionally absent; hierarchy expand/collapse uses the host
-selection manager and preserves node parents, levels, subtotals, and identities.
+The matrix uses a bounded 100-row and 100-column reduction window. A bounded
+view announces its limit instead of presenting a false complete result. When
+the host returns an aggregate segment, the visual exposes a **Load more data**
+action and calls `fetchMoreData(true)`; the visual does not request more data
+when the mapping has no segment. Drill declarations are intentionally absent;
+hierarchy expand/collapse uses the host selection manager and preserves node
+parents, levels, subtotals, and identities. Parent column groups retain their
+leaf spans, while subtotal values are shown only when supplied by the host.
 
 ## Development
 

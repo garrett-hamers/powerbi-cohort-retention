@@ -67,6 +67,21 @@ export interface MatrixTree {
   levels: powerbi.DataViewHierarchyLevel[];
 }
 
+export interface MatrixColumnGroup {
+  key: string;
+  label: string;
+  level: number;
+  parentKey?: string;
+  identity?: powerbi.visuals.CustomVisualOpaqueIdentity;
+  node: MatrixNodeRef;
+  leafKeys: string[];
+  leafPositions: number[];
+  selectionIdentity: SelectionIdentity;
+  isSubtotal: boolean;
+  isCollapsed?: boolean;
+  canBeExpanded: boolean;
+}
+
 export interface CohortCell {
   rowIndex: number;
   columnIndex: number;
@@ -151,6 +166,7 @@ export interface CohortModel {
   columnTree: MatrixTree;
   rows: CohortRow[];
   columns: CohortColumn[];
+  columnGroups: MatrixColumnGroup[];
   metric: MetricResolution;
   grain: string;
   denominatorDescription: string;
@@ -158,6 +174,10 @@ export interface CohortModel {
   diagnostics: string[];
   sourceCount: number;
   hasMoreData: boolean;
+  rowLimit: number;
+  columnLimit: number;
+  rowsTruncated: boolean;
+  columnsTruncated: boolean;
 }
 
 export interface BuildModelOptions {
@@ -169,6 +189,8 @@ export interface BuildModelOptions {
   latestObservablePeriod?: number;
   locale?: string;
   hasMoreData?: boolean;
+  maxRows?: number;
+  maxColumns?: number;
 }
 
 export interface MatrixValueRead {
@@ -191,7 +213,7 @@ export function buildCohortModel(
   if (columnTree.leaves.length === 0) diagnostics.push("No relative period columns were supplied.");
   if (metric.diagnostic) diagnostics.push(metric.diagnostic);
 
-  const columns = columnTree.leaves
+  const allColumns = columnTree.leaves
     .map((node, sourcePosition) => ({
       key: node.key,
       label: node.label || `Period ${sourcePosition}`,
@@ -210,23 +232,65 @@ export function buildCohortModel(
     .sort(compareColumns)
     .map((column, position) => ({ ...column, position }));
 
-  if (columns.some((column) => !validatePeriodIndex(column.periodIndex))) {
+  if (allColumns.some((column) => !validatePeriodIndex(column.periodIndex))) {
     diagnostics.push(
       "Every Period value must be a non-negative integer; presentation labels do not define order."
     );
   }
+  if (!allColumns.some((column) => column.periodIndex === 0)) {
+    diagnostics.push("Period 0 is required to establish the original cohort denominator.");
+  }
 
   const duplicatePeriods = new Set<number>();
-  for (const column of columns) {
+  for (const column of allColumns) {
     if (column.periodIndex !== null && duplicatePeriods.has(column.periodIndex)) {
-      diagnostics.push(`Period ${column.periodIndex} occurs more than once.`);
+      diagnostics.push(
+        `Period ${column.periodIndex} occurs more than once; source order is used as the deterministic tie-breaker.`
+      );
     }
     if (column.periodIndex !== null) duplicatePeriods.add(column.periodIndex);
   }
 
-  const modelRows = rowTree.nodes.map((node, rowIndex) => {
+  const rowLabels = new Map<string, number>();
+  for (const node of rowTree.nodes) {
+    const fingerprint = `${node.parentKey ?? "root"}|${node.level}|${node.label}`;
+    rowLabels.set(fingerprint, (rowLabels.get(fingerprint) ?? 0) + 1);
+    for (const value of node.node.levelValues ?? []) {
+      if (!isValidCohortDate(value.value)) {
+        diagnostics.push(`Cohort row "${node.label}" contains an invalid date value.`);
+        break;
+      }
+    }
+  }
+  for (const [fingerprint, count] of rowLabels) {
+    if (count > 1) {
+      const label = fingerprint.split("|").slice(2).join("|");
+      diagnostics.push(
+        `Cohort row "${label}" occurs ${count} times; matrix identities are preserved and source order is used.`
+      );
+    }
+  }
+
+  const maxRows = options.maxRows ?? 100;
+  const maxColumns = options.maxColumns ?? 100;
+  const columns = allColumns.slice(0, maxColumns).map((column, position) => ({
+    ...column,
+    position
+  }));
+  const rowsTruncated = rowTree.nodes.length > maxRows;
+  const columnsTruncated = allColumns.length > maxColumns;
+  if (rowsTruncated) {
+    diagnostics.push(`Only the first ${maxRows} cohort rows are rendered; use the host data reduction to page more.`);
+  }
+  if (columnsTruncated) {
+    diagnostics.push(
+      `Only the first ${maxColumns} relative period columns are rendered; use the host data reduction to page more.`
+    );
+  }
+
+  const allModelRows = rowTree.nodes.map((node, rowIndex) => {
     const rowKey = node.key;
-    const periodZero = columns.find((column) => column.periodIndex === 0);
+    const periodZero = allColumns.find((column) => column.periodIndex === 0);
     const baselineDenominator =
       metric.denominatorIndex === null || periodZero === undefined
         ? null
@@ -242,7 +306,7 @@ export function buildCohortModel(
     const observedPeriods =
       primaryIndex === null
         ? []
-        : columns
+        : allColumns
             .filter((column) =>
               readMatrixValue(node.node.values, column.sourcePosition, primaryIndex, valueSources.length).present
             )
@@ -281,19 +345,28 @@ export function buildCohortModel(
     };
   });
 
-  const latest = options.latestObservablePeriod ?? maximum(modelRows.map((row) => row.latestObservablePeriod));
+  const modelRows = allModelRows.slice(0, maxRows);
+  const columnGroups = buildColumnGroups(columnTree, columns);
+  const latest =
+    options.latestObservablePeriod ??
+    maximum(allModelRows.map((row) => row.latestObservablePeriod));
   return {
     rowTree,
     columnTree,
     rows: modelRows,
     columns,
+    columnGroups,
     metric,
     grain: options.grain ?? "relative integer period",
     denominatorDescription: metric.denominatorDescription,
     latestObservablePeriod: latest,
     diagnostics,
     sourceCount: valueSources.length,
-    hasMoreData: Boolean(options.hasMoreData)
+    hasMoreData: Boolean(options.hasMoreData),
+    rowLimit: maxRows,
+    columnLimit: maxColumns,
+    rowsTruncated,
+    columnsTruncated
   };
 }
 
@@ -351,29 +424,36 @@ export function readMatrixValue(
       candidates.push({ value: linear, direct: false });
     }
   } else if (isRecord(values)) {
+    const directKey = String(columnPosition);
+    const hasDirect = Object.prototype.hasOwnProperty.call(values, directKey);
     const direct = values[String(columnPosition)];
     if (direct !== undefined) {
       candidates.push({ value: direct, direct: true });
     }
-    const linearKey = String(columnPosition * Math.max(1, sourceCount) + measureIndex);
-    const linear = values[linearKey];
-    if (linear !== undefined && linear !== direct) {
-      candidates.push({ value: linear, direct: false });
-    }
-    if (columnPosition === 0) {
-      const measure = values[String(measureIndex)];
-      if (measure !== undefined && measure !== direct && measure !== linear) {
-        candidates.push({ value: measure, direct: false });
+    if (!hasDirect) {
+      const linearKey = String(columnPosition * Math.max(1, sourceCount) + measureIndex);
+      const linear = values[linearKey];
+      if (linear !== undefined) {
+        candidates.push({ value: linear, direct: false });
       }
-    }
+      if (columnPosition === 0) {
+        const measure = values[String(measureIndex)];
+        if (measure !== undefined && measure !== linear) {
+          candidates.push({ value: measure, direct: false });
+        }
+      }
 
-    for (const [key, candidate] of Object.entries(values)) {
-      const numericKey = Number(key);
-      if (!Number.isInteger(numericKey)) continue;
-      if (numericKey !== columnPosition && numericKey !== columnPosition * Math.max(1, sourceCount) + measureIndex) {
-        continue;
+      for (const [key, candidate] of Object.entries(values)) {
+        const numericKey = Number(key);
+        if (!Number.isInteger(numericKey)) continue;
+        if (
+          numericKey !== columnPosition &&
+          numericKey !== columnPosition * Math.max(1, sourceCount) + measureIndex
+        ) {
+          continue;
+        }
+        candidates.push({ value: candidate, direct: false });
       }
-      candidates.push({ value: candidate, direct: false });
     }
   }
 
@@ -675,7 +755,7 @@ function buildCell(args: {
       : args.baselineDenominator;
   let reason = assessment.reason;
 
-  if (status !== "future" && status !== "invalid") {
+  if (status === "observed" || status === "observed-zero") {
     switch (args.metric.kind) {
       case "entity-retention": {
         const result = retentionRate(assessment.value, args.baselineDenominator);
@@ -722,7 +802,12 @@ function buildCell(args: {
     }
   }
 
-  if (!args.metric.supported && status !== "future") {
+  if (
+    !args.metric.supported &&
+    status !== "future" &&
+    status !== "blank" &&
+    status !== "missing"
+  ) {
     value = null;
     numerator = null;
     denominator = null;
@@ -733,7 +818,10 @@ function buildCell(args: {
   const sourceFormat =
     primaryIndex === null ? args.metric.formatString : args.valueSources[primaryIndex]?.format ?? args.metric.formatString;
   const displayValue =
-    status === "future" || status === "invalid"
+    status === "future" ||
+    status === "invalid" ||
+    status === "blank" ||
+    status === "missing"
       ? ""
       : formatHostValue(value, sourceFormat, args.locale, args.metric.outputPercent);
 
@@ -761,7 +849,10 @@ function buildCell(args: {
     reason,
     metricKind: args.metric.kind,
     identity:
-      status === "future" || status === "invalid"
+      status === "future" ||
+      status === "invalid" ||
+      status === "blank" ||
+      status === "missing"
         ? undefined
         : {
             key: `${args.node.key}|${args.column.key}`,
@@ -824,6 +915,7 @@ function buildMatrixTree(
   const nodes: MatrixNodeRef[] = [];
   const leaves: MatrixNodeRef[] = [];
   const levels = hierarchy?.levels ?? [];
+  const keyOccurrences = new Map<string, number>();
   let leafPosition = 0;
 
   const visit = (
@@ -833,7 +925,13 @@ function buildMatrixTree(
     isRoot: boolean
   ): MatrixNodeRef => {
     const level = isRoot ? -1 : node.level ?? Math.max(0, path.length - 1);
-    const key = stableKey(node.identity, `${orientation}:${path.join(".") || "root"}`);
+    const baseKey = stableKey(
+      node.identity,
+      semanticNodeKey(orientation, node, parentKey, level)
+    );
+    const occurrence = (keyOccurrences.get(baseKey) ?? 0) + 1;
+    keyOccurrences.set(baseKey, occurrence);
+    const key = occurrence === 1 ? baseKey : `${baseKey}#${occurrence}`;
     const ref: MatrixNodeRef = {
       node,
       key,
@@ -865,6 +963,39 @@ function buildMatrixTree(
 
   const root = hierarchy?.root ? visit(hierarchy.root, undefined, [], true) : undefined;
   return { root, nodes, leaves, levels };
+}
+
+function buildColumnGroups(
+  columnTree: MatrixTree,
+  columns: CohortColumn[]
+): MatrixColumnGroup[] {
+  const positions = new Map(columns.map((column) => [column.key, column.position]));
+  return columnTree.nodes
+    .filter((node) => node.children.length > 0 || node.isSubtotal)
+    .map((node) => {
+      const leafKeys = descendantLeaves(node).map((leaf) => leaf.key);
+      return {
+        key: node.key,
+        label: node.label,
+        level: node.level,
+        parentKey: node.parentKey,
+        identity: node.identity,
+        node,
+        leafKeys,
+        leafPositions: leafKeys
+          .map((key) => positions.get(key))
+          .filter((position): position is number => position !== undefined),
+        selectionIdentity: selectionIdentity(node.key, "column"),
+        isSubtotal: node.isSubtotal,
+        isCollapsed: node.isCollapsed,
+        canBeExpanded: node.canBeExpanded
+      };
+    });
+}
+
+function descendantLeaves(node: MatrixNodeRef): MatrixNodeRef[] {
+  if (node.children.length === 0) return [node];
+  return node.children.flatMap((child) => descendantLeaves(child));
 }
 
 function readValueCandidate(
@@ -961,7 +1092,18 @@ function displayLabel(value: unknown, fallback: string, locale?: string): string
 
 function formatLabelValue(value: unknown, locale?: string): string {
   if (value instanceof Date) return new Intl.DateTimeFormat(locale || "en-US").format(value);
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Intl.NumberFormat(locale || "en-US", { useGrouping: false }).format(value);
+  }
   return String(value);
+}
+
+function isValidCohortDate(value: unknown): boolean {
+  if (value instanceof Date) return Number.isFinite(value.getTime());
+  if (typeof value !== "string") return true;
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}(?:$|T|\s)/.test(trimmed)) return true;
+  return Number.isFinite(Date.parse(trimmed));
 }
 
 function selectionIdentity(key: string, kind: "row" | "column"): SelectionIdentity {
@@ -976,6 +1118,23 @@ function stableKey(value: unknown, fallback: string): string {
   if (value === null || value === undefined) return fallback;
   const encoded = JSON.stringify(value);
   return encoded === undefined || encoded === "{}" ? fallback : encoded;
+}
+
+function semanticNodeKey(
+  orientation: "row" | "column",
+  node: MatrixNode,
+  parentKey: string | undefined,
+  level: number
+): string {
+  const values = (node.levelValues ?? []).map((item) => item.value);
+  return `${orientation}:${JSON.stringify({
+    parentKey: parentKey ?? "root",
+    level,
+    value: node.value,
+    name: node.name,
+    values,
+    subtotal: node.isSubtotal === true
+  })}`;
 }
 
 function maximum(values: Array<number | null | undefined>): number | null {

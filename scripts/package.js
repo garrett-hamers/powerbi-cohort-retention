@@ -20,6 +20,8 @@ function run(command, args, options = {}) {
 }
 
 fs.rmSync(staging, { recursive: true, force: true });
+fs.rmSync(output, { force: true });
+fs.rmSync(path.join(dist, "package-metadata.json"), { force: true });
 fs.mkdirSync(staging, { recursive: true });
 try {
   if (process.platform === "win32") {
@@ -35,7 +37,6 @@ try {
   fs.cpSync(path.join(root, "stringResources"), path.join(staging, "stringResources"), {
     recursive: true
   });
-  fs.rmSync(output, { force: true });
   if (process.platform === "win32") {
     run("powershell.exe", [
       "-NoProfile",

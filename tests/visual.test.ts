@@ -221,6 +221,87 @@ describe("visual interaction and lifecycle", () => {
     });
   });
 
+  test("gates host interactions when allowInteractions is false", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const host = createHost();
+    Object.defineProperty(host, "hostCapabilities", {
+      value: { allowInteractions: false },
+      configurable: true
+    });
+    const instance = visual(element, host);
+    instance.update(updateOptions() as never);
+    const cell = element.querySelector<HTMLElement>("[role='gridcell']")!;
+    cell.click();
+    cell.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 9, clientY: 12 }));
+    cell.dispatchEvent(pointerEvent("pointerdown", "touch"));
+    cell.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+
+    expect(host.selected).toHaveLength(0);
+    expect(host.selectionManager.showContextMenu).not.toHaveBeenCalled();
+    expect(host.tooltipService.show).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(element.querySelectorAll("[role='gridcell']")[1]);
+  });
+
+  test("restores focused grid cells and reports exactly one terminal lifecycle event", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const host = createHost();
+    const instance = visual(element, host);
+    instance.update(updateOptions() as never);
+    const firstRenderCells = element.querySelectorAll<HTMLElement>("[role='gridcell']");
+    firstRenderCells[1].focus();
+    instance.update(updateOptions() as never);
+
+    const secondRenderCells = element.querySelectorAll<HTMLElement>("[role='gridcell']");
+    expect(document.activeElement).toBe(secondRenderCells[1]);
+    expect(host.eventService.renderingStarted).toHaveBeenCalledTimes(2);
+    expect(host.eventService.renderingFinished).toHaveBeenCalledTimes(2);
+    expect(host.eventService.renderingFailed).not.toHaveBeenCalled();
+    expect(
+      host.eventService.renderingStarted.mock.invocationCallOrder[1]
+    ).toBeLessThan(host.eventService.renderingFinished.mock.invocationCallOrder[1]);
+  });
+
+  test("reports a single failed lifecycle when host setup throws", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const host = createHost();
+    Object.defineProperty(host, "colorPalette", {
+      configurable: true,
+      get: () => {
+        throw new Error("palette unavailable");
+      }
+    });
+    const instance = visual(element, host);
+    instance.update(updateOptions() as never);
+
+    expect(host.eventService.renderingStarted).toHaveBeenCalledTimes(1);
+    expect(host.eventService.renderingFinished).not.toHaveBeenCalled();
+    expect(host.eventService.renderingFailed).toHaveBeenCalledTimes(1);
+  });
+
+  test("renders highlight presence without opacity-based intensity", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const host = createHost();
+    const instance = visual(element, host);
+    const options = updateOptions() as unknown as {
+      dataViews: Array<{
+        matrix: { rows: { root: { children: Array<{ values: unknown }> } } };
+      }>;
+    };
+    const matrix = options.dataViews[0].matrix;
+    matrix.rows.root.children[0].values = {
+      0: { values: [{ value: 10, highlight: 0.25 }, { value: 10 }] }
+    };
+    instance.update(options as never);
+    const cell = element.querySelector<HTMLElement>("[role='gridcell']")!;
+    expect(cell.classList.contains("is-highlighted")).toBe(true);
+    expect(cell.style.opacity).toBe("");
+    expect(cell.dataset.highlight).toBe("0.25");
+  });
+
   test("reads formatting metadata, renders localization direction and fetch-more state", () => {
     const element = document.createElement("div");
     document.body.appendChild(element);

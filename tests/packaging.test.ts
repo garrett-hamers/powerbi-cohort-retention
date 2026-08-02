@@ -29,8 +29,14 @@ describe("clean visual package metadata", () => {
     expect(capabilities.objects.matrix.properties.metricMode.type.enumeration).toEqual(
       expect.arrayContaining([expect.objectContaining({ value: "entity-retention" })])
     );
-    expect(capabilities.dataViewMappings[0].matrix.rows.dataReductionAlgorithm.window.count).toBe(500);
-    expect(capabilities.dataViewMappings[0].matrix.columns.dataReductionAlgorithm.window.count).toBe(500);
+    expect(capabilities.dataViewMappings[0].matrix.rows.dataReductionAlgorithm.window.count).toBe(100);
+    expect(capabilities.dataViewMappings[0].matrix.columns.dataReductionAlgorithm.window.count).toBe(100);
+    expect(capabilities.expandCollapse.roles).toEqual(["Cohort", "Period"]);
+    expect(capabilities.subtotals.matrix.rowSubtotals.defaultValue).toBe(true);
+    expect(capabilities.subtotals.matrix.columnSubtotals.defaultValue).toBe(true);
+    expect(capabilities.sorting.implicit.clauses).toEqual([
+      { role: "Period", direction: 1 }
+    ]);
     expect(capabilities.tooltips.roles).toEqual(["Tooltip"]);
     expect(capabilities.tooltips.supportEnhancedTooltips).toBe(true);
   });
@@ -62,5 +68,18 @@ describe("clean visual package metadata", () => {
       expect(metadata.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
       expect(metadata.privileges).toEqual([]);
     }
+  });
+
+  test("declares certification-safe tooling and exact package settings", () => {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+    const webpack = fs.readFileSync(path.join(root, "webpack.config.js"), "utf8");
+    expect(packageJson.devDependencies["eslint-plugin-powerbi-visuals"]).toBeDefined();
+    expect(packageJson.scripts.eslint).toBe("npx eslint . --ext .js,.jsx,.ts,.tsx");
+    expect(packageJson.scripts.audit).toBe("npm audit");
+    expect(webpack).toMatch(/minimize:\s*false/);
+    expect(fs.existsSync(path.join(root, "LICENSE"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "SECURITY.md"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "CONTRIBUTING.md"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "CHANGELOG.md"))).toBe(true);
   });
 });

@@ -11,6 +11,7 @@ describe("cohort denominator and period semantics", () => {
     expect(retentionRate(10, 10)).toEqual({ value: 1, valid: true });
     expect(retentionRate(4, 10)).toEqual({ value: 0.4, valid: true });
     expect(retentionRate(0, 10)).toEqual({ value: 0, valid: true });
+    expect(retentionRate(11, 10).reason).toMatch(/cannot exceed/i);
   });
 
   test("rejects an absent, zero, or negative cohort denominator", () => {
@@ -29,27 +30,30 @@ describe("cohort denominator and period semantics", () => {
       value: 0
     });
     expect(assessPeriod(1, 2, false, null)).toMatchObject({
-      status: "observed-zero",
-      value: 0
+      status: "missing",
+      value: null
     });
   });
 
-  test("treats sparse missing values at or before the latest period as observed zero", () => {
+  test("keeps sparse missing values, explicit blanks, invalid values, and future periods distinct", () => {
     expect(assessPeriod(0, 2, false, undefined)).toEqual({
-      status: "observed-zero",
-      value: 0
+      status: "missing",
+      value: null,
+      reason: "No value was supplied for this historical cohort-period intersection."
     });
-    expect(assessPeriod(2, 2, false, null)).toEqual({
-      status: "observed-zero",
-      value: 0
+    expect(assessPeriod(1, 2, true, null)).toEqual({
+      status: "blank",
+      value: null,
+      reason: "The source supplied BLANK for this cohort-period intersection."
     });
     expect(assessPeriod(3, 2, false, undefined)).toEqual({
       status: "future",
       value: null
     });
     expect(assessPeriod(1, 2, true, "not-a-number")).toEqual({
-      status: "observed-zero",
-      value: 0
+      status: "invalid",
+      value: null,
+      reason: "The supplied cohort-period value is not numeric."
     });
   });
 

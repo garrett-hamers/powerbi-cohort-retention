@@ -37,6 +37,8 @@ export interface Labels {
   observed: string;
   observedZero: string;
   future: string;
+  blank: string;
+  missing: string;
   invalidObservation: string;
   metricEntityRetention: string;
   metricEntityCount: string;
@@ -82,6 +84,8 @@ const ENGLISH: Labels = {
   observed: "Observed",
   observedZero: "Observed zero",
   future: "Future",
+  blank: "Blank",
+  missing: "Missing",
   invalidObservation: "Invalid",
   metricEntityRetention: "Entity retention",
   metricEntityCount: "Retained entities (count)",
@@ -135,6 +139,8 @@ const SPANISH: Labels = {
   observed: "Observado",
   observedZero: "Cero observado",
   future: "Futuro",
+  blank: "En blanco",
+  missing: "Faltante",
   invalidObservation: "No válido"
 };
 
@@ -177,6 +183,10 @@ export function observationLabel(status: ObservationStatus, labels: Labels): str
       return labels.observedZero;
     case "future":
       return labels.future;
+    case "blank":
+      return labels.blank;
+    case "missing":
+      return labels.missing;
     case "invalid":
       return labels.invalidObservation;
   }
