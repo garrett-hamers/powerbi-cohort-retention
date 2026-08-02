@@ -20,11 +20,20 @@
   "Label_Denominator": "Denominator",
   "Label_Value": "Value",
   "Label_Numerator": "Numerator",
+  "Label_MetricMode": "Metric mode",
+  "Label_ShowStatus": "Show status",
+  "Label_CellPadding": "Cell padding",
   "Metric_EntityRetention": "Entity retention",
   "Metric_EntityCount": "Retained entities (count)",
   "Metric_SuppliedRate": "Supplied rate",
   "Metric_RevenueRetention": "Revenue retention",
   "Metric_ARPU": "ARPU",
   "Metric_NRR": "Net revenue retention",
-  "Metric_Unsupported": "Unsupported metric"
+  "Metric_Unsupported": "Unsupported metric",
+  "Observation_Observed": "Observed",
+  "Observation_ObservedZero": "Observed zero",
+  "Observation_Blank": "Blank",
+  "Observation_Missing": "Missing",
+  "Observation_Future": "Future",
+  "Observation_Invalid": "Invalid"
 }

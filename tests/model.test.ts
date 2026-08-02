@@ -246,7 +246,7 @@ describe("cohort matrix model", () => {
     expect(nrr.rows[0].cells.map((cell) => cell.value)).toEqual([1.1, 1.2]);
   });
 
-  test("preserves sparse observed-zero states through the latest observation", () => {
+  test("preserves sparse missing, observed-zero, and future states", () => {
     const model = buildCohortModel(
       matrix(
         [
@@ -273,11 +273,45 @@ describe("cohort matrix model", () => {
 
     expect(model.rows[0].cells.map((cell) => cell.status)).toEqual([
       "observed",
-      "observed-zero",
+      "missing",
       "observed-zero",
       "future"
     ]);
-    expect(model.rows[0].cells.map((cell) => cell.value)).toEqual([1, 0, 0, null]);
+    expect(model.rows[0].cells.map((cell) => cell.value)).toEqual([1, null, 0, null]);
+  });
+
+  test("keeps an explicit blank distinct from a missing historical intersection", () => {
+    const model = buildCohortModel(
+      matrix(
+        [
+          {
+            value: "A",
+            values: multiMeasureValues([
+              [10, 10],
+              [null, 10],
+              [undefined, 10],
+              [5, 10]
+            ])
+          }
+        ],
+        [{ value: 0 }, { value: 1 }, { value: 2 }, { value: 3 }],
+        [source("Retained", { Retained: true }), source("Size", { CohortSize: true })]
+      ),
+      { metricKind: "entity-retention" }
+    );
+
+    expect(model.rows[0].cells.map((cell) => cell.status)).toEqual([
+      "observed",
+      "blank",
+      "missing",
+      "observed"
+    ]);
+    expect(model.rows[0].cells.map((cell) => cell.identity)).toEqual([
+      expect.anything(),
+      undefined,
+      undefined,
+      expect.anything()
+    ]);
   });
 
   test("preserves host highlight values with the selected metric", () => {

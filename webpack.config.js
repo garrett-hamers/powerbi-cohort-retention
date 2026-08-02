@@ -20,6 +20,9 @@ module.exports = {
       }
     ]
   },
+  optimization: {
+    minimize: false
+  },
   externals: {
     "powerbi-visuals-api": "powerbi"
   },

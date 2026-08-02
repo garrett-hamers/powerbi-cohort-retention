@@ -11,9 +11,9 @@ The visual's canonical mapping is:
 - **Values**: one primary measure when an explicit mode is selected
 - **Tooltip**: optional detail fields
 
-Entity retention is `N(c,k) / N(c,0)`. A future period is rendered as an
-observation-aware blank; an observed period with no qualifying activity is
-rendered as zero. The matrix discloses its grain, denominator, and latest
+Entity retention is `N(c,k) / N(c,0)`. Future periods, missing historical
+intersections, explicit BLANK values, observed zeroes, and invalid values remain
+distinct states. The matrix discloses its grain, denominator, and latest
 observable period in the status line and tooltips.
 
 ## Metric contract
@@ -36,10 +36,11 @@ integer index; labels such as `Month 0` are presentation only. `Tooltip` fields
 are passed through to the host tooltip with their host format strings.
 
 The matrix uses a bounded 500-row and 500-column reduction window. When the host
-returns a segment, the visual exposes a **Load more data** action and calls
-`fetchMoreData`; it does not pretend that a truncated view is complete. Drill
-declarations are intentionally absent; hierarchy expand/collapse uses the host
-selection manager and preserves node parents, levels, subtotals, and identities.
+returns a segment, or the bounded model truncates a response, the visual exposes
+a **Load more data** action and calls `fetchMoreData`; it does not pretend that a
+truncated view is complete. Drill declarations are intentionally absent;
+hierarchy expand/collapse uses the host selection manager and preserves node
+parents, levels, subtotals, and identities.
 
 ## Development
 
@@ -52,6 +53,12 @@ npm run build
 npm run package
 npm run audit
 ```
+
+`npm run package` runs the direct `pbiviz` version gate, creates the package from
+source inputs, and runs the certification audit. The current Power BI CLI's
+internal package compiler is not used as the package producer because its
+generated plugin uses UUIDs as JavaScript identifiers; the repository retains the
+valid stable UUID and applies the equivalent source/package gates locally.
 
 The visual has no network or external-asset dependencies, uses no privileges,
 and preserves its visual GUID in `pbiviz.json` and the generated package metadata.

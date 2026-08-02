@@ -1,4 +1,10 @@
-export type ObservationStatus = "observed" | "observed-zero" | "future" | "invalid";
+export type ObservationStatus =
+  | "observed"
+  | "observed-zero"
+  | "blank"
+  | "missing"
+  | "future"
+  | "invalid";
 
 export interface PeriodAssessment {
   status: ObservationStatus;
@@ -36,13 +42,33 @@ export function assessPeriod(
   }
 
   const period = periodIndex as number;
-  const numericValue = toFiniteNumber(rawValue);
   if (!present && period > (latestObservablePeriod ?? -1)) {
     return { status: "future", value: null };
   }
 
-  if (!present || numericValue === null) {
-    return { status: "observed-zero", value: 0 };
+  if (!present) {
+    return {
+      status: "missing",
+      value: null,
+      reason: "No value was supplied for this historical cohort-period intersection."
+    };
+  }
+
+  if (rawValue === null || rawValue === undefined) {
+    return {
+      status: "blank",
+      value: null,
+      reason: "The source supplied BLANK for this cohort-period intersection."
+    };
+  }
+
+  const numericValue = toFiniteNumber(rawValue);
+  if (numericValue === null) {
+    return {
+      status: "invalid",
+      value: null,
+      reason: "The supplied cohort-period value is not numeric."
+    };
   }
 
   return {
@@ -52,7 +78,27 @@ export function assessPeriod(
 }
 
 export function retentionRate(numerator: unknown, cohortSize: unknown): DenominatorResult {
-  return ratio(numerator, cohortSize, "The retained entity count", "The original cohort size");
+  const result = ratio(
+    numerator,
+    cohortSize,
+    "The retained entity count",
+    "The original cohort size"
+  );
+  if (!result.valid || result.value === null) return result;
+  const numeratorValue = toFiniteNumber(numerator);
+  const denominatorValue = toFiniteNumber(cohortSize);
+  if (
+    numeratorValue === null ||
+    denominatorValue === null ||
+    numeratorValue > denominatorValue
+  ) {
+    return {
+      value: null,
+      valid: false,
+      reason: "Retained entity count cannot exceed the original cohort size."
+    };
+  }
+  return result;
 }
 
 export function ratio(

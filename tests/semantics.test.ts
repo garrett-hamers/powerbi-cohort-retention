@@ -29,27 +29,30 @@ describe("cohort denominator and period semantics", () => {
       value: 0
     });
     expect(assessPeriod(1, 2, false, null)).toMatchObject({
-      status: "observed-zero",
-      value: 0
+      status: "missing",
+      value: null
     });
   });
 
-  test("treats sparse missing values at or before the latest period as observed zero", () => {
+  test("keeps sparse missing values, explicit blanks, invalid values, and future periods distinct", () => {
     expect(assessPeriod(0, 2, false, undefined)).toEqual({
-      status: "observed-zero",
-      value: 0
+      status: "missing",
+      value: null,
+      reason: "No value was supplied for this historical cohort-period intersection."
     });
-    expect(assessPeriod(2, 2, false, null)).toEqual({
-      status: "observed-zero",
-      value: 0
+    expect(assessPeriod(1, 2, true, null)).toEqual({
+      status: "blank",
+      value: null,
+      reason: "The source supplied BLANK for this cohort-period intersection."
     });
     expect(assessPeriod(3, 2, false, undefined)).toEqual({
       status: "future",
       value: null
     });
     expect(assessPeriod(1, 2, true, "not-a-number")).toEqual({
-      status: "observed-zero",
-      value: 0
+      status: "invalid",
+      value: null,
+      reason: "The supplied cohort-period value is not numeric."
     });
   });
 
@@ -61,6 +64,7 @@ describe("cohort denominator and period semantics", () => {
     expect(ratio(5, 0, "Numerator", "Denominator").reason).toMatch(/denominator.*zero/i);
     expect(ratio(-1, 10, "Numerator", "Denominator").reason).toMatch(/numerator.*negative/i);
     expect(ratio(5, null, "Numerator", "Denominator").reason).toMatch(/denominator.*missing/i);
+    expect(retentionRate(11, 10).reason).toMatch(/cannot exceed/i);
   });
 
   test("requires non-negative integer relative periods", () => {

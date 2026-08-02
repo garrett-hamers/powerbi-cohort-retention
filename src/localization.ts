@@ -36,6 +36,8 @@ export interface Labels {
   cellPadding: string;
   observed: string;
   observedZero: string;
+  blank: string;
+  missing: string;
   future: string;
   invalidObservation: string;
   metricEntityRetention: string;
@@ -81,6 +83,8 @@ const ENGLISH: Labels = {
   cellPadding: "Cell padding",
   observed: "Observed",
   observedZero: "Observed zero",
+  blank: "Blank",
+  missing: "Missing",
   future: "Future",
   invalidObservation: "Invalid",
   metricEntityRetention: "Entity retention",
@@ -134,6 +138,8 @@ const SPANISH: Labels = {
   metricUnsupported: "Métrica no compatible",
   observed: "Observado",
   observedZero: "Cero observado",
+  blank: "En blanco",
+  missing: "Faltante",
   future: "Futuro",
   invalidObservation: "No válido"
 };
@@ -175,6 +181,10 @@ export function observationLabel(status: ObservationStatus, labels: Labels): str
       return labels.observed;
     case "observed-zero":
       return labels.observedZero;
+    case "blank":
+      return labels.blank;
+    case "missing":
+      return labels.missing;
     case "future":
       return labels.future;
     case "invalid":

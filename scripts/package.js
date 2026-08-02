@@ -5,6 +5,7 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 const dist = path.join(root, "dist");
 const staging = path.join(root, ".package-staging");
+const temporary = path.join(root, ".tmp");
 const output = path.join(dist, "atlyn-cohort-retention.pbiviz");
 
 function copy(source, destination) {
@@ -19,7 +20,9 @@ function run(command, args, options = {}) {
   });
 }
 
+fs.rmSync(dist, { recursive: true, force: true });
 fs.rmSync(staging, { recursive: true, force: true });
+fs.rmSync(temporary, { recursive: true, force: true });
 fs.mkdirSync(staging, { recursive: true });
 try {
   if (process.platform === "win32") {
@@ -49,10 +52,15 @@ try {
   const metadata = {
     guid: JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8")).visual.guid,
     privileges: JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8")).privileges,
-    package: path.relative(root, output)
+    package: path.relative(root, output),
+    packageSha256: require("crypto")
+      .createHash("sha256")
+      .update(fs.readFileSync(output))
+      .digest("hex")
   };
   fs.writeFileSync(path.join(dist, "package-metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
   console.log(`Created ${path.relative(root, output)}`);
 } finally {
   fs.rmSync(staging, { recursive: true, force: true });
+  fs.rmSync(temporary, { recursive: true, force: true });
 }
