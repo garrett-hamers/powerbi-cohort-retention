@@ -70,10 +70,13 @@ describe("clean visual package metadata", () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
     expect(packageJson.devDependencies["powerbi-visuals-tools"]).toBe("7.2.1");
     expect(packageJson.devDependencies["eslint-plugin-powerbi-visuals"]).toBe("1.1.1");
+    expect(packageJson.devDependencies.jszip).toBe("3.10.1");
     expect(packageJson.devDependencies.typescript).toBe("5.9.3");
     expect(packageJson.scripts.eslint).toBe("npx eslint . --ext .js,.jsx,.ts,.tsx");
     expect(packageJson.scripts.package).toContain("certification:audit");
+    expect(packageJson.scripts.package).toContain("reproducibility-check.js");
     expect(fs.existsSync(path.join(root, "eslint.config.mjs"))).toBe(true);
     expect(fs.existsSync(path.join(root, "scripts", "certification-audit.js"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "scripts", "reproducibility-check.js"))).toBe(true);
   });
 });

@@ -1,6 +1,8 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const JSZip = require("jszip");
+const { getSourceManifest } = require("./package-manifest");
 
 const root = path.resolve(__dirname, "..");
 const pbiviz = readJson("pbiviz.json");
@@ -77,6 +79,12 @@ const packageSha256 = crypto.createHash("sha256").update(fs.readFileSync(package
 assert(metadata.guid === expectedGuid, "package metadata GUID does not match source");
 assert(metadata.packageSha256 === packageSha256, "package hash does not match package metadata");
 assert(metadata.privileges.length === 0, "package metadata privileges are not empty");
+const sourceManifest = getSourceManifest(root);
+assert(
+  JSON.stringify(metadata.sourceFiles) === JSON.stringify(sourceManifest.files),
+  "package metadata source files do not match package inputs"
+);
+assert(metadata.sourceSha256 === sourceManifest.sha256, "package source hash does not match package inputs");
 
 const distFiles = fs.readdirSync(path.join(root, "dist")).sort();
 assert(
@@ -85,4 +93,19 @@ assert(
   "dist contains stale or missing generated artifacts"
 );
 
-console.log("Certification audit passed.");
+JSZip.loadAsync(fs.readFileSync(packagePath))
+ .then((archive) => {
+   const packageFiles = Object.values(archive.files)
+     .filter((entry) => !entry.dir)
+     .map((entry) => entry.name.replace(/^(\.\/)+/, ""))
+     .sort();
+   assert(
+     JSON.stringify(packageFiles) === JSON.stringify(metadata.sourceFiles),
+     "package file entries do not match source metadata"
+   );
+   console.log("Certification audit passed.");
+ })
+ .catch((error) => {
+   console.error(error);
+   process.exitCode = 1;
+ });
