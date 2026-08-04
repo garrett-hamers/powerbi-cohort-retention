@@ -40,6 +40,28 @@
   An unstyled capture previously would have passed the dimension and byte-size gates unnoticed.
   The three committed screenshots re-capture byte-for-byte identical, confirming they already
   represent the styled product.
+- Fixed three PBIR schema defects in the sample report, all confirmed by validating every
+  sample JSON file against Microsoft's published schemas with ajv:
+  - `definition/version.json` declared `version` `"4.0"`, which the published
+    `versionMetadata/1.0.0` schema rejects — it pins the value to
+    `^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$` ("major.minor.patch, patch always 0"), so a
+    two-component value fails outright and Power BI Desktop can reject the project on open.
+    It is now `"2.0.0"`. This is a different contract from `definition.pbir` and
+    `definition.pbism`, whose schemas declare `version` as a free-form string, so `"4.0"`
+    remains correct in those two files.
+  - `definition/report.json` referenced `report/2.4.0`, **which does not exist** — that path
+    404s in `microsoft/json-schemas`, whose published report versions stop at `2.1.0` before
+    jumping to `3.x`. It now references `report/2.1.0`, the closest published version.
+  - `definition/report.json` was missing `themeCollection`, which the report schema marks as
+    required alongside `$schema`. A base theme reference is now emitted.
+- Moved `definition.pbir` to `definitionProperties/2.0.0`, the newer published format that
+  real PBIP projects use. Both `1.0.0` and `2.0.0` exist and both accept the file, so this is
+  consistency rather than a fix.
+- Added a schema regression gate. `tests/sample-report.test.ts` and
+  `scripts/certification-audit.js` now assert that `definition/version.json` matches the
+  published pattern and that every sample file's `$schema` is one of a pinned set of versions
+  verified to exist upstream. A nonexistent `$schema` is otherwise completely silent: nothing
+  dereferences it at build time.
 - Prepared the Microsoft AppSource / Partner Center submission.
 - Corrected `pbiviz.json` submission metadata: real support mailbox, `https://atlyn.io/contact`
   support URL, and listing-quality description. The visual GUID is unchanged.

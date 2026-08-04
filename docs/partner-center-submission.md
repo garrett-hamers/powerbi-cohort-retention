@@ -223,6 +223,45 @@ values are single named constants in `scripts/generate-sample-report.js`, and te
 assert they are at least 4 and that no stale `model.bim` or `report.json` exists to
 shadow the folders.
 
+### `definition/version.json` is a different contract
+
+`definition/version.json` is **not** governed by the rule above, and this is easy to get
+wrong: the `versionMetadata/1.0.0` schema constrains its `version` to
+
+```
+"pattern": "^[1-9][0-9]*\\.(0|[1-9][0-9]*)\\.0$"
+"format of version is major.minor.patch - major: >=1, minor: >=0, patch: always 0"
+```
+
+so a two-component value such as `"4.0"` is **invalid** and Power BI Desktop can reject the
+project on open. This file declares `"2.0.0"`. `definition.pbir` and `definition.pbism` keep
+`"4.0"` because their schemas declare `version` as a free-form string.
+
+### Schema versions are pinned to versions that exist
+
+Every `$schema` in `samples/` was checked against
+[`microsoft/json-schemas`](https://github.com/microsoft/json-schemas), and each sample file
+was validated against the fetched schema with ajv. A nonexistent `$schema` URL is otherwise
+completely silent — nothing dereferences it at build time — but Power BI Desktop can reject
+the project.
+
+| File | Schema |
+| --- | --- |
+| `AtlynSample.pbip` | `pbip/pbipProperties/1.0.0` |
+| `definition.pbism` | `semanticModel/definitionProperties/1.0.0` |
+| `definition.pbir` | `report/definitionProperties/2.0.0` |
+| `definition/version.json` | `report/definition/versionMetadata/1.0.0` |
+| `definition/report.json` | `report/definition/report/2.1.0` |
+| `definition/pages/pages.json` | `report/definition/pagesMetadata/1.0.0` |
+| `page.json` | `report/definition/page/2.1.0` |
+| `visual.json` | `report/definition/visualContainer/2.7.0` |
+
+`report.json` previously referenced `report/2.4.0`, which does not exist upstream — the
+published report versions run `1.0.0`–`1.3.0`, `2.0.0`, `2.1.0`, then `3.0.0`–`3.3.0`. It was
+also missing `themeCollection`, which the schema marks as required. Both are fixed, and
+`tests/sample-report.test.ts` plus `scripts/certification-audit.js` now assert the version
+pattern and the pinned schema set so neither can regress.
+
 PBIR and TMDL are documented by Microsoft as **preview** features. Opening and
 re-saving the project requires the matching preview options in Power BI Desktop
 under **File > Options and settings > Options > Preview features**.

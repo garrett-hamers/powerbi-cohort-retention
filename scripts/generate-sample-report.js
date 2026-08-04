@@ -45,20 +45,30 @@ const COHORT_COUNT = 16;
 const PERIOD_COUNT = 12;
 
 /**
- * Both of these MUST be "4.0" or higher for the exploded `definition/` folders to be
- * loaded at all. Microsoft documents that version "1.0" means the definition is stored
- * in the single legacy file instead:
+ * `definition.pbir` and `definition.pbism` MUST be "4.0" or higher for the exploded
+ * `definition/` folders to be loaded at all. Microsoft documents that version "1.0" means
+ * the definition is stored in the single legacy file instead:
  *
  *   definition.pbir  — 1.0: report definition must be PBIR-Legacy in report.json.
  *                      4.0+: PBIR-Legacy or PBIR (\definition folder).
  *   definition.pbism — 1.0: semantic model definition must be TMSL in model.bim.
  *                      4.0+: TMSL or TMDL (\definition folder).
  *
+ * Both schemas declare `version` as a free-form string, so "4.0" is valid there.
+ *
  * https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-report
  * https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-dataset
  */
 const PBIR_DEFINITION_VERSION = "4.0";
 const PBISM_DEFINITION_VERSION = "4.0";
+
+/**
+ * `definition/version.json` is a DIFFERENT file with a different contract, and it is the one
+ * place where "4.0" is invalid. versionMetadata/1.0.0 constrains the value to
+ * `^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$` — "format of version is major.minor.patch, major >= 1,
+ * minor >= 0, patch always 0" — so a two-component value fails outright.
+ */
+const PBIR_REPORT_DEFINITION_VERSION = "2.0.0";
 
 /** Deterministic PBIR object names, so regenerating never churns the diff. */
 function stableName(seed) {
@@ -382,7 +392,7 @@ function main() {
   written.push(
     writeJson(`${reportFolder}/definition.pbir`, {
       $schema:
-        "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/1.0.0/schema.json",
+        "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
       version: PBIR_DEFINITION_VERSION,
       datasetReference: { byPath: { path: `../${modelFolder}` } }
     })
@@ -391,13 +401,20 @@ function main() {
     writeJson(`${reportFolder}/definition/version.json`, {
       $schema:
         "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
-      version: PBIR_DEFINITION_VERSION
+      version: PBIR_REPORT_DEFINITION_VERSION
     })
   );
   written.push(
     writeJson(`${reportFolder}/definition/report.json`, {
       $schema:
-        "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.4.0/schema.json",
+        "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.1.0/schema.json",
+      themeCollection: {
+        baseTheme: {
+          name: "CY24SU10",
+          reportVersionAtImport: "5.55",
+          type: "SharedResources"
+        }
+      },
       resourcePackages: [
         {
           name: guid,

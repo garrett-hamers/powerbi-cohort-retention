@@ -256,12 +256,59 @@ for (const relativePath of [
   assert(fs.existsSync(path.join(sampleRoot, relativePath)), `the sample report is missing ${relativePath}`);
 }
 
-// Microsoft documents definition version "1.0" as meaning the definition lives in the
-// single legacy file. The exploded definition/ folders require "4.0" or higher.
+// definition.pbir / definition.pbism: Microsoft documents definition version "1.0" as meaning
+// the definition lives in the single legacy file. The exploded definition/ folders require
+// "4.0" or higher. Both schemas declare version as a free-form string.
 const samplePbir = JSON.parse(fs.readFileSync(path.join(sampleReport, "definition.pbir"), "utf8"));
 const samplePbism = JSON.parse(fs.readFileSync(path.join(sampleModel, "definition.pbism"), "utf8"));
 assert(Number(samplePbir.version) >= 4, "definition.pbir must declare version 4.0 or higher for PBIR");
 assert(Number(samplePbism.version) >= 4, "definition.pbism must declare version 4.0 or higher for TMDL");
+
+// definition/version.json is the one PBIR file whose version IS constrained. The published
+// versionMetadata/1.0.0 schema pins it to major.minor.patch with patch always 0, so a
+// two-component value such as "4.0" is invalid and Power BI Desktop can reject the project.
+const sampleDefinitionVersion = JSON.parse(
+  fs.readFileSync(path.join(sampleReport, "definition", "version.json"), "utf8")
+);
+assert(
+  /^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$/.test(sampleDefinitionVersion.version ?? ""),
+  `definition/version.json version must be major.minor.patch with patch 0; found ${sampleDefinitionVersion.version}`
+);
+
+// A nonexistent $schema URL is silent at build time but can make Power BI Desktop reject the
+// project, so every reference is pinned to a version verified to exist in
+// https://github.com/microsoft/json-schemas and validated with ajv against the fetched schema.
+const PUBLISHED_SCHEMAS = new Set([
+  "https://developer.microsoft.com/json-schemas/fabric/pbip/pbipProperties/1.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/semanticModel/definitionProperties/1.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.1.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json"
+]);
+
+function assertPublishedSchema(relativePath) {
+  const document = JSON.parse(fs.readFileSync(path.join(sampleRoot, relativePath), "utf8"));
+  assert(
+    PUBLISHED_SCHEMAS.has(document.$schema),
+    `${relativePath} references ${document.$schema}, which is not a published schema version`
+  );
+  return document;
+}
+
+for (const relativePath of [
+  `${sampleProject}.pbip`,
+  path.join(`${sampleProject}.SemanticModel`, "definition.pbism"),
+  path.join(`${sampleProject}.Report`, "definition.pbir"),
+  path.join(`${sampleProject}.Report`, "definition", "version.json"),
+  path.join(`${sampleProject}.Report`, "definition", "report.json"),
+  path.join(`${sampleProject}.Report`, "definition", "pages", "pages.json")
+]) {
+  assertPublishedSchema(relativePath);
+}
+
 assert(
   !fs.existsSync(path.join(sampleModel, "model.bim")),
   "a leftover model.bim would override the TMDL definition folder"
