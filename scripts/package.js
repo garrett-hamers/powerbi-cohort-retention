@@ -118,8 +118,10 @@ async function main() {
     }
     await normalizePackage();
     const sourceManifest = getSourceManifest(root);
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     const metadata = {
-      guid: JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8")).visual.guid,
+      guid: pbiviz.visual.guid,
+      version: pbiviz.visual.version,
       privileges: JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8")).privileges,
       sourceFiles: sourceManifest.files,
       sourceSha256: sourceManifest.sha256,

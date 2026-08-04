@@ -1,13 +1,26 @@
 # Changelog
 
-## Unreleased
+## 1.0.1.0
+
+Version bump because the packaged bytes changed. The storefront distributes the
+v1.0.0.0 artifact from a version-keyed Blob path, so shipping different bytes under the
+same version number would be wrong. **v1.0.1.0 supersedes v1.0.0.0**; the previously
+published `6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` (20,950
+bytes) remains valid as v1.0.0.0. The visual GUID `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11`
+is unchanged.
 
 - Prepared the Microsoft AppSource / Partner Center submission.
-- Corrected `pbiviz.json` submission metadata: real support mailbox, `https://atlyn.io/contact`
-  support URL, and listing-quality description. The visual GUID is unchanged.
-- Replaced the 1x1 placeholder `assets/icon.png` with a real 20x20 cohort-retention icon and
-  added the required 300x300 `assets/partner-center-logo-300.png`, both generated
-  deterministically by `npm run brand:assets`.
+- **Replaced the 1x1 placeholder `assets/icon.png` (68 bytes) with a real 20x20
+  cohort-retention icon.** 20x20 is the size Microsoft requires for the in-product
+  visualization-pane icon. Because `assets/icon.png` is a packaged input, this is the
+  change that altered the packaged bytes and forced this version bump.
+- **Added the separate 300x300 AppSource listing logo** at
+  `assets/partner-center-logo-300.png`. The pane icon and the listing logo are two
+  distinct required assets at two different sizes; both are now enforced as separate
+  checks. Both are generated deterministically by `npm run brand:assets` from one
+  retention-triangle motif, so they read as the same mark at both sizes.
+- Corrected `pbiviz.json` submission metadata: real support mailbox,
+  `https://atlyn.io/contact` support URL, and listing-quality description.
 - Added three real 1366x768 submission screenshots captured from the built visual by
   `npm run screenshots`, rendered against deterministic fully offline fixtures.
 - Added `EULA.md` and `docs/partner-center-submission.md`.
@@ -33,12 +46,8 @@
 - Added `tests/sample-report.test.ts`, which validates the sample report structurally and
   additionally evaluates the embedded visual bundle in JSDOM to prove it registers its
   plugin and renders a grid.
-
-**The packaged `.pbiviz` hash changed.** `assets/icon.png` and `pbiviz.json` are packaged
-inputs, so replacing the placeholder icon and correcting the metadata produced a new
-artifact. The release manifest and the published artifact must be re-published. The
-submission assets and the `samples/` sample report are listing artifacts and are
-deliberately not packaged inputs, so they do not affect it.
+- `dist/package-metadata.json` now records the visual `version` alongside the GUID and
+  package hash, so a release build reports everything the manifest needs in one file.
 - Added `.gitattributes` pinning the repository to LF. The packaged inputs `pbiviz.json`,
   `capabilities.json`, `style/visual.less`, and `stringResources/**` are byte-hashed, so a
   CRLF checkout was silently changing the packaged artifact on Windows.

@@ -23,7 +23,7 @@ and
 | Visual name | `visual.name` | `atlynCohortRetention` |
 | Display name | `visual.displayName` | `Atlyn Cohort Retention` |
 | Visual GUID | `visual.guid` | `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` |
-| Version (four parts) | `visual.version` | `1.0.0.0` |
+| Version (four parts) | `visual.version` | `1.0.1.0` |
 | API version | `apiVersion` | `5.11.1` |
 | Description | `visual.description` | See [section 2](#2-listing-description). 641 characters. |
 | Support URL | `visual.supportUrl` | `https://atlyn.io/contact` |
@@ -282,55 +282,73 @@ the one-time Power BI Desktop step above, before submitting.
 
 ## 9. Packaged artifact
 
-**The packaged artifact hash changed in this submission preparation.** The
-previously published artifact was
-`6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` at 20,950
-bytes. `assets/icon.png` and `pbiviz.json` are both packaged inputs
-(`scripts/package-manifest.js`), so replacing the 1 x 1 placeholder icon and
-correcting the submission metadata necessarily produced a new artifact. This is
-expected and deliberate.
+### Publish these three values
+
+| Field | Value |
+| --- | --- |
+| **Filename** | **`atlyn-cohort-retention.pbiviz`** (from `dist/`) |
+| **Version** | **`1.0.1.0`** |
+| **SHA-256** | **`9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8`** |
+| **Size** | **20,899 bytes** |
+| GUID | `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` (unchanged) |
+
+The filename is a fixed constant in `scripts/package.js`; it is **not** derived from
+the version, so it does not change between releases. The version is carried inside
+the package (`pbiviz.json`) and by the storefront's version-keyed Blob path, not by
+the filename. `dist/package-metadata.json` records `version`, `guid`, and
+`packageSha256` together for exactly this purpose.
+
+### v1.0.1.0 supersedes the v1.0.0.0 artifact in Blob storage
+
+`assets/icon.png` is a packaged input (`scripts/package-manifest.js`), so replacing
+the 1 x 1 placeholder with the real 20 x 20 icon changed the packaged bytes.
+Publishing different bytes under the same version number would be wrong, so the
+version was bumped.
+
+| Version | SHA-256 | Size | Status |
+| --- | --- | --- | --- |
+| 1.0.0.0 | `6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` | 20,950 bytes | Currently in Blob storage. **Still valid** — leave it in place. |
+| **1.0.1.0** | `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` | **20,899 bytes** | **Publish this**, at its own version-keyed Blob path, and update the release manifest. |
+
+The v1.0.0.0 artifact is not being replaced or invalidated; v1.0.1.0 is a new
+release alongside it. The GUID is identical in both, which is correct — a GUID
+identifies the visual, not the release.
 
 ### Reproducibility scope
 
 `npm run package` is byte-for-byte reproducible: `scripts/reproducibility-check.js`
-packages twice and fails if the two artifacts differ. Every packaging run prints
-the hash, byte size, platform, Node version, and zlib version, and writes the hash
-to `dist/package-metadata.json` as `packageSha256`.
+packages twice and fails if the two artifacts differ. It now passes at the new
+v1.0.1.0 hash. Every packaging run prints the hash, byte size, platform, Node
+version, and zlib version, and writes the hash and version to
+`dist/package-metadata.json`.
 
-Cross-platform determinism was **not** true before this change. The Linux
+Cross-platform determinism was **not** true earlier in this work. The Linux
 packaging path uses `zip -X -qr` and the Windows path uses `Compress-Archive`, and
 those two producers disagree about whether to emit explicit **directory entries**.
 `zip` writes them, `Compress-Archive` does not, and the normalizer preserved that
 difference. Five redundant directory entries at roughly 98 bytes each accounted
-for the 490-byte gap previously observed between CI (21,424 bytes) and a Windows
-build (20,934 bytes).
+for a 490-byte gap between the two.
 
 `normalizePackage` in `scripts/package.js` now drops directory entries entirely.
 They carry no content and every file entry already stores its full path, so no
 consumer is affected. Combined with the `.gitattributes` LF pin — which stops a
 Windows checkout from silently changing the byte-hashed package inputs
 `pbiviz.json`, `capabilities.json`, `style/visual.less`, and `stringResources/**` —
-the packaged artifact should now be identical on every platform.
+the packaged artifact is now identical on every platform. At v1.0.0.0-era content
+this was confirmed with matching hashes on Windows/Node 24 and CI ubuntu/Node 22,
+running different zlib versions.
 
-| Environment | SHA-256 | Size |
-| --- | --- | --- |
-| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` | 20,898 bytes |
-| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` | 20,898 bytes |
-
-**Confirmed identical**, so `3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3`
-at 20,898 bytes is the value to publish in the release manifest. Note that the two
-environments run different Node and zlib versions and still agree, which disproves
-the earlier assumption that zlib was the cause of the divergence.
-
-If the values ever diverge again, take the authoritative hash and byte size from
+If the values ever diverge, take the authoritative hash and byte size from
 `dist/package-metadata.json` of the build whose `.pbiviz` you actually upload, and
 never mix a hash from one environment with a binary from another.
 
-For reference, earlier values during this work were
+For reference, intermediate values produced during this work were
 `e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` (20,934 bytes,
-before line-ending normalization) and
+before line-ending normalization),
 `e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` (21,424 bytes,
-CI, before the directory-entry fix). Neither should be published.
+CI, before the directory-entry fix), and
+`3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` (20,898 bytes,
+still versioned 1.0.0.0). **None of these should be published.**
 
 The 300 x 300 logo, the screenshots, and the entire `samples/` sample report are
 Partner Center **listing** assets and are intentionally not added to the `.pbiviz`
@@ -385,9 +403,10 @@ These cannot be completed from this repository.
    the offer.
 6. **Upload the logo and the three screenshots** from `assets/`, and the `.pbix`
    from step 1.
-7. **Re-publish the release manifest and the Azure Blob artifact** with the new
-   `.pbiviz` SHA-256 and byte size from [section 9](#9-packaged-artifact). This
-   repository does not touch Azure or the storefront.
+7. **Publish the new artifact and update the release manifest** using the filename,
+   version, SHA-256, and byte size from [section 9](#9-packaged-artifact). Publish
+   v1.0.1.0 at its own version-keyed Blob path and leave the existing v1.0.0.0
+   artifact in place. This repository does not touch Azure or the storefront.
 
 ## 12. Status
 

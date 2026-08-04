@@ -97,6 +97,10 @@ const metadata = readJson(path.relative(root, metadataPath));
 const publicationMetadata = readJson(path.relative(root, publicationMetadataPath));
 const packageSha256 = crypto.createHash("sha256").update(fs.readFileSync(packagePath)).digest("hex");
 assert(metadata.guid === expectedGuid, "package metadata GUID does not match source");
+assert(
+  metadata.version === pbiviz.visual.version,
+  "package metadata version does not match pbiviz.json; re-run npm run package"
+);
 assert(metadata.packageSha256 === packageSha256, "package hash does not match package metadata");
 assert(metadata.privileges.length === 0, "package metadata privileges are not empty");
 const sourceManifest = getSourceManifest(root);

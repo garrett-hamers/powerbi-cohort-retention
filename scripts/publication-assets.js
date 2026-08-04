@@ -38,11 +38,11 @@ const RESERVED_TLDS = ["example", "invalid", "test", "localhost"];
 
 /** Requirements only the account owner can satisfy outside this repository. */
 const OWNER_ACTIONS = [
-  "Open samples/atlyn-cohort-retention-sample.pbip in Power BI Desktop, confirm the visual renders and the data refreshes with no credential prompt, then File > Save As > Power BI report (.pbix) and upload that .pbix to Partner Center. The PBIP is generated and validated in this repository; the .pbix conversion cannot be done headlessly because a .pbix model is a binary Analysis Services backup image.",
+  "Open samples/AtlynSample.pbip in Power BI Desktop, confirm the visual renders and the data loads with no credential prompt, then File > Save As > Power BI report (.pbix) and upload that .pbix to Partner Center. The PBIP is generated and validated in this repository; the .pbix conversion cannot be done headlessly because a .pbix model is a binary Analysis Services backup image, and pbi-tools compile is incompatible with the installed Power BI Desktop packaging API.",
   "Confirm during that Desktop step that Power BI accepts the hyphenated visual GUID. The official tooling generates GUIDs that are valid JavaScript identifiers, and this one is not; see the GUID risk section of docs/partner-center-submission.md.",
   "Create or confirm the Microsoft Partner Center account and the Power BI visual offer, configured as a FREE offer with no paid or transactable billing.",
   "Paste the privacy policy URL, support URL, and EULA into the Partner Center offer listing, and upload the logo and screenshots.",
-  "Re-publish the release manifest and the Azure Blob artifact, because the packaged .pbiviz hash changed when the placeholder icon was replaced with the production icon."
+  "Publish the packaged .pbiviz as v1.0.1.0 at its own version-keyed Blob path and update the release manifest with the new filename, version, SHA-256, and byte size. The existing v1.0.0.0 artifact stays valid and should be left in place; v1.0.1.0 supersedes it because replacing the placeholder icon changed the packaged bytes."
 ];
 
 function toRelative(absolutePath) {

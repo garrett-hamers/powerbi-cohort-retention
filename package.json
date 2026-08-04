@@ -1,6 +1,6 @@
 {
   "name": "atlyn-cohort-retention",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Atlyn Cohort Retention Power BI custom visual",
   "private": true,
   "scripts": {

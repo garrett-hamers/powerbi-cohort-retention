@@ -63,6 +63,9 @@ describe("clean visual package metadata", () => {
       const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
       expect(metadata.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
       expect(metadata.privileges).toEqual([]);
+      expect(metadata.version).toBe(
+        JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8")).visual.version
+      );
     }
   });
 
