@@ -3,13 +3,40 @@ import path from "node:path";
 
 const root = path.resolve(__dirname, "..");
 const samples = path.join(root, "samples");
-const projectName = "atlyn-cohort-retention-sample";
+const projectName = "AtlynSample";
 const reportFolder = path.join(samples, `${projectName}.Report`);
 const modelFolder = path.join(samples, `${projectName}.SemanticModel`);
+const modelDefinition = path.join(modelFolder, "definition");
 
 const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
 const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8"));
 const guid: string = pbiviz.visual.guid;
+
+/**
+ * Power Query / M data-source functions and remote URLs. None may appear in the
+ * semantic model: the sample must open and refresh with no external connection and no
+ * credential prompt.
+ */
+const EXTERNAL_SOURCE_TOKENS = [
+  "Sql.Database",
+  "Sql.Databases",
+  "Web.Contents",
+  "Json.Document",
+  "File.Contents",
+  "Folder.Files",
+  "Excel.Workbook",
+  "Csv.Document",
+  "OData.Feed",
+  "Odbc.DataSource",
+  "OleDb.DataSource",
+  "AzureStorage.",
+  "SharePoint.",
+  "PowerPlatform.",
+  "Snowflake.",
+  "Databricks.",
+  "http://",
+  "https://"
+];
 
 function readJson(absolutePath: string): any {
   return JSON.parse(fs.readFileSync(absolutePath, "utf8"));
@@ -29,25 +56,43 @@ function visualJson(): any {
   return readJson(path.join(visuals, entries[0].name, "visual.json"));
 }
 
+function tmdlFiles(): string[] {
+  const collected: string[] = [];
+  const walk = (directory: string): void => {
+    fs.readdirSync(directory, { withFileTypes: true }).forEach((entry) => {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".tmdl")) collected.push(full);
+    });
+  };
+  walk(modelDefinition);
+  return collected.sort();
+}
+
 describe("offline PBIP sample report", () => {
-  test("ships every required PBIP and PBIR part as valid JSON", () => {
-    const required = [
+  test("ships every required PBIP, PBIR, and TMDL part", () => {
+    [
+      path.join(samples, ".gitignore"),
       path.join(samples, `${projectName}.pbip`),
       path.join(modelFolder, "definition.pbism"),
-      path.join(modelFolder, "model.bim"),
+      path.join(modelDefinition, "database.tmdl"),
+      path.join(modelDefinition, "model.tmdl"),
+      path.join(modelDefinition, "tables", "CohortRetention.tmdl"),
       path.join(reportFolder, "definition.pbir"),
       path.join(reportFolder, "definition", "version.json"),
       path.join(reportFolder, "definition", "report.json"),
       path.join(reportFolder, "definition", "pages", "pages.json")
-    ];
-    required.forEach((absolutePath) => {
-      expect(fs.existsSync(absolutePath)).toBe(true);
-      expect(() => readJson(absolutePath)).not.toThrow();
-    });
+    ].forEach((absolutePath) => expect(fs.existsSync(absolutePath)).toBe(true));
 
-    const pageFile = path.join(pageDirectory(), "page.json");
-    expect(fs.existsSync(pageFile)).toBe(true);
-    expect(() => readJson(pageFile)).not.toThrow();
+    [
+      path.join(samples, `${projectName}.pbip`),
+      path.join(modelFolder, "definition.pbism"),
+      path.join(reportFolder, "definition.pbir"),
+      path.join(reportFolder, "definition", "version.json"),
+      path.join(reportFolder, "definition", "report.json"),
+      path.join(reportFolder, "definition", "pages", "pages.json"),
+      path.join(pageDirectory(), "page.json")
+    ].forEach((absolutePath) => expect(() => readJson(absolutePath)).not.toThrow());
 
     const pages = readJson(path.join(reportFolder, "definition", "pages", "pages.json"));
     expect(pages.pageOrder).toEqual([path.basename(pageDirectory())]);
@@ -58,6 +103,23 @@ describe("offline PBIP sample report", () => {
 
     const pbir = readJson(path.join(reportFolder, "definition.pbir"));
     expect(pbir.datasetReference.byPath.path).toBe(`../${projectName}.SemanticModel`);
+  });
+
+  test("declares definition versions that actually load the definition folders", () => {
+    // Microsoft documents version "1.0" as meaning the definition lives in the single
+    // legacy file (PBIR-Legacy report.json / TMSL model.bim). The exploded definition/
+    // folders require "4.0" or higher, otherwise Power BI Desktop ignores them.
+    const pbir = readJson(path.join(reportFolder, "definition.pbir"));
+    const pbism = readJson(path.join(modelFolder, "definition.pbism"));
+    const version = readJson(path.join(reportFolder, "definition", "version.json"));
+
+    expect(Number(pbir.version)).toBeGreaterThanOrEqual(4);
+    expect(Number(pbism.version)).toBeGreaterThanOrEqual(4);
+    expect(Number(version.version)).toBeGreaterThanOrEqual(4);
+
+    // A leftover legacy file would silently win over the folder it replaces.
+    expect(fs.existsSync(path.join(modelFolder, "model.bim"))).toBe(false);
+    expect(fs.existsSync(path.join(reportFolder, "report.json"))).toBe(false);
   });
 
   test("binds the visual by GUID to roles that exist in capabilities.json", () => {
@@ -133,41 +195,41 @@ describe("offline PBIP sample report", () => {
     expect(definition.content.js).toContain(`powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}]`);
   });
 
-  test("keeps the semantic model free of any external data source", () => {
-    const model = fs.readFileSync(path.join(modelFolder, "model.bim"), "utf8");
-    [
-      "Sql.Database",
-      "Sql.Databases",
-      "Web.Contents",
-      "Json.Document",
-      "File.Contents",
-      "Folder.Files",
-      "Excel.Workbook",
-      "Csv.Document",
-      "OData.Feed",
-      "Odbc.DataSource",
-      "AzureStorage.",
-      "SharePoint.",
-      "PowerPlatform.",
-      "Snowflake.",
-      "http://",
-      "https://"
-    ].forEach((token) => expect(model).not.toContain(token));
+  test("sources data from a DAX calculated table, not a query", () => {
+    const table = fs.readFileSync(
+      path.join(modelDefinition, "tables", "CohortRetention.tmdl"),
+      "utf8"
+    );
+    expect(table).toContain("partition CohortRetention = calculated");
+    expect(table).toContain("mode: import");
+    expect(table).toContain("DATATABLE(");
+    expect(table).toMatch(/"Cohort", STRING/);
+    expect(table).toMatch(/"Period", INTEGER/);
 
-    const parsed = JSON.parse(model);
-    const partitions = parsed.model.tables.flatMap((table: any) => table.partitions);
-    expect(partitions.length).toBeGreaterThan(0);
-    partitions.forEach((partition: any) => {
-      expect(partition.mode).toBe("import");
-      expect(partition.source.type).toBe("m");
-      expect(partition.source.expression.join("\n")).toContain("#table(");
+    const model = fs.readFileSync(path.join(modelDefinition, "model.tmdl"), "utf8");
+    expect(model).toContain("ref table CohortRetention");
+    expect(fs.readFileSync(path.join(modelDefinition, "database.tmdl"), "utf8")).toContain(
+      "compatibilityLevel:"
+    );
+
+    // Every declared column must be a column the DATATABLE actually produces.
+    const declared = [...table.matchAll(/^\tcolumn (\S+)$/gm)].map((match) => match[1]);
+    expect(declared).toEqual(["Cohort", "Period", "Retained", "CohortSize"]);
+    declared.forEach((column) => expect(table).toContain(`sourceColumn: [${column}]`));
+  });
+
+  test("keeps the semantic model free of any data source", () => {
+    const files = tmdlFiles();
+    expect(files.length).toBeGreaterThan(0);
+    expect(fs.existsSync(path.join(modelDefinition, "dataSources.tmdl"))).toBe(false);
+    expect(fs.existsSync(path.join(modelDefinition, "expressions.tmdl"))).toBe(false);
+
+    files.forEach((file) => {
+      const contents = fs.readFileSync(file, "utf8");
+      EXTERNAL_SOURCE_TOKENS.forEach((token) => expect(contents).not.toContain(token));
+      // An `= m` partition would be a Power Query source rather than a calculated table.
+      expect(contents).not.toMatch(/partition .* = m\b/);
     });
-    expect(parsed.model.tables[0].columns.map((column: any) => column.name)).toEqual([
-      "Cohort",
-      "Period",
-      "Retained",
-      "CohortSize"
-    ]);
   });
 
   test("keeps the sample report out of the packaged .pbiviz inputs", () => {
@@ -183,6 +245,12 @@ describe("offline PBIP sample report", () => {
       "visual.js"
     ]);
     names.forEach((name: string) => expect(name.startsWith("samples/")).toBe(false));
+  });
+
+  test("ignores the local-only Power BI Desktop artifacts", () => {
+    const ignore = fs.readFileSync(path.join(samples, ".gitignore"), "utf8");
+    expect(ignore).toContain("**/.pbi/localSettings.json");
+    expect(ignore).toContain("**/.pbi/cache.abf");
   });
 });
 

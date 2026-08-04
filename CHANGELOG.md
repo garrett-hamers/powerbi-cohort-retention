@@ -14,13 +14,17 @@
 - Recorded the licensing decision: the AppSource listing is **free**, with no paid or
   transactable offer. AppSource licensing is separate from the Atlyn storefront Stripe
   subscription, and no feature of the visual is gated behind it.
-- Added the offline sample report at `samples/atlyn-cohort-retention-sample.pbip`, built
-  by `npm run sample:report`. It is a PBIP project with a PBIR report definition, 82 rows
-  of inline `#table(...)` literal data, and the built visual embedded through
-  `resourcePackages` rather than `publicCustomVisuals`, so it opens with no external
-  connection. Converting it to `.pbix` is a documented one-time Power BI Desktop step,
-  because a `.pbix` model is a binary Analysis Services backup image that cannot be
-  produced headlessly.
+- Added the offline sample report at `samples/AtlynSample.pbip`, built by
+  `npm run sample:report`. It is a native Power BI Project with a PBIR report definition
+  and a TMDL semantic model whose only table is a DAX calculated table built with
+  `DATATABLE(...)`, so the model has no data source at all and never prompts for
+  credentials. The built visual is embedded through `resourcePackages` and
+  `Report/CustomVisuals/<GUID>/` rather than `publicCustomVisuals`, so nothing resolves
+  from the AppSource store at open time. `definition.pbir` and `definition.pbism` declare
+  version `4.0`, which Microsoft documents as the minimum for the `\definition` folders to
+  be loaded at all. Converting to `.pbix` is a documented one-time Power BI Desktop step:
+  a `.pbix` model is a binary Analysis Services backup image, and `pbi-tools compile` is
+  incompatible with the installed Desktop packaging API.
 - Extracted the shared deterministic cohort dataset into `scripts/cohort-dataset.js`, so
   the screenshots and the sample report use the same numbers.
 - Turned the publication readiness script into an enforced gate in both `npm run package`

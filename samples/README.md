@@ -1,8 +1,9 @@
 # Offline sample report
 
-`atlyn-cohort-retention-sample` is the sample report required for the Microsoft
-AppSource submission. It is a **Power BI Project (PBIP)**: plain JSON plus Power
-Query M, with no binary parts.
+`AtlynSample` is the sample report required for the Microsoft AppSource submission.
+It is a native **Power BI Project (PBIP)**: plain text throughout, with a **PBIR**
+report definition and a **TMDL** semantic model. Power BI Desktop opens it
+directly, with no third-party tooling.
 
 Regenerate it deterministically from the current build:
 
@@ -11,69 +12,124 @@ npm run build
 npm run sample:report
 ```
 
-## Why PBIP and not `.pbix`
-
-A `.pbix` stores its model in a `DataModel` part that is a **binary Analysis
-Services backup image**, which cannot be produced headlessly. A `.pbit` would
-additionally need a UTF-16LE legacy `Report/Layout` blob, a `DataModelSchema`
-part, and a hand-built `[Content_Types].xml` — none of which this repository can
-validate, so generating one would be guesswork.
-
-PBIP uses the **PBIR** report format, which is what offline custom-visual
-embedding actually requires. Converting it to `.pbix` is a one-time manual step:
-
-1. Open `atlyn-cohort-retention-sample.pbip` in Power BI Desktop.
-2. Confirm the visual renders and the data refreshes with no credential prompt.
-3. **File → Save As → Power BI report (.pbix)**.
-4. Upload that `.pbix` to Partner Center.
-
-> This project has **not** been opened in Power BI Desktop from this repository.
-> Everything the automated tests assert is structural and functional-in-JSDOM.
-> Step 2 above is the real validation gate.
-
-## Offline guarantee
-
-The semantic model's only partition is an inline `#table(...)` literal — 82 rows
-covering 16 monthly cohorts across 12 relative periods. There is no SQL, web,
-file, folder, OData, or ODBC source, so a refresh makes no external connection
-and prompts for no credentials.
-
-The visual is embedded in the report through `resourcePackages`:
-
-```text
-atlyn-cohort-retention-sample.Report/
-  CustomVisuals/<GUID>/package.json
-  CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json
-```
-
-`publicCustomVisuals` is deliberately **not** used, because that resolves the
-visual from the AppSource store when the report is opened and would therefore not
-be offline. A test asserts it stays absent.
-
 ## Layout
 
 ```text
-atlyn-cohort-retention-sample.pbip
-atlyn-cohort-retention-sample.SemanticModel/
-  definition.pbism
-  model.bim
-atlyn-cohort-retention-sample.Report/
-  definition.pbir
-  definition/version.json
-  definition/report.json
-  definition/pages/pages.json
-  definition/pages/<pageId>/page.json
-  definition/pages/<pageId>/visuals/<visualId>/visual.json
-  CustomVisuals/<GUID>/package.json
-  CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json
+samples/
+├── .gitignore
+├── AtlynSample.pbip
+├── AtlynSample.Report/
+│   ├── definition.pbir
+│   ├── definition/
+│   │   ├── version.json
+│   │   ├── report.json
+│   │   ├── pages/pages.json
+│   │   └── pages/<pageId>/page.json
+│   │       └── visuals/<visualId>/visual.json
+│   └── CustomVisuals/<GUID>/
+│       ├── package.json
+│       └── resources/<GUID>.pbiviz.json
+└── AtlynSample.SemanticModel/
+    ├── definition.pbism
+    └── definition/
+        ├── database.tmdl
+        ├── model.tmdl
+        └── tables/CohortRetention.tmdl
 ```
 
 Page and visual identifiers are derived from a fixed seed with SHA-256, so
-regenerating never churns the diff.
+regenerating never churns the diff. They satisfy the PBIR naming rule that object
+names consist of word characters or hyphens.
+
+## Offline guarantee
+
+The semantic model contains **no data source at all**. Its single table is a DAX
+**calculated table** built with `DATATABLE(...)` — 82 rows covering 16 monthly
+cohorts across 12 relative periods:
+
+```tmdl
+	partition CohortRetention = calculated
+		mode: import
+		source =
+				DATATABLE(
+				    "Cohort", STRING,
+				    "Period", INTEGER,
+				    "Retained", INTEGER,
+				    "CohortSize", INTEGER,
+				    {
+				        {"2024-01", 0, 1240, 1240},
+				        ...
+				    }
+				)
+```
+
+This is a stronger guarantee than an inline Power Query literal such as
+`#table(...)`: a calculated table is evaluated by the engine and is not a query at
+all, so there is no data source to authenticate, no credential prompt, and no
+refresh dependency. There is deliberately no `dataSources.tmdl` and no
+`expressions.tmdl`.
+
+The visual is embedded in the report through `resourcePackages` plus
+`Report/CustomVisuals/<GUID>/`. Microsoft documents that folder as holding
+**private** custom visuals, while AppSource and Organization visuals "are loaded
+automatically by Power BI Desktop" — which is exactly why `publicCustomVisuals`
+would resolve from the store at open time and would **not** be offline. A test
+asserts it stays absent.
+
+## Definition versions
+
+`definition.pbir` and `definition.pbism` both declare **`"version": "4.0"`**. This
+is required, not cosmetic. Microsoft documents:
+
+| File | Version | Supported formats |
+| --- | --- | --- |
+| `definition.pbir` | 1.0 | Report definition must be stored as PBIR-Legacy in the `report.json` file. |
+| `definition.pbir` | 4.0 or higher | PBIR-Legacy (`report.json`) **or PBIR (`\definition` folder)**. |
+| `definition.pbism` | 1.0 | Semantic model definition must be stored as TMSL in the `model.bim` file. |
+| `definition.pbism` | 4.0 or above | TMSL (`model.bim`) **or TMDL (`\definition` folder)**. |
+
+At version `1.0` Power BI Desktop would look for a single `report.json` /
+`model.bim` and ignore the `definition/` folders entirely. Both values are single
+named constants in `scripts/generate-sample-report.js`
+(`PBIR_DEFINITION_VERSION`, `PBISM_DEFINITION_VERSION`), and tests assert they are
+at least 4 and that no stale `model.bim` or `report.json` is present to shadow the
+folders.
+
+Sources:
+[report folder](https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-report),
+[semantic model folder](https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-dataset).
+
+> PBIR and TMDL are both documented by Microsoft as **preview** features. Saving a
+> project in these formats requires the corresponding preview options in Power BI
+> Desktop under **File > Options and settings > Options > Preview features**.
+
+## Converting to `.pbix`
+
+AppSource wants a `.pbix`. That conversion is a one-time manual step:
+
+1. Open `AtlynSample.pbip` in Power BI Desktop.
+2. Confirm the visual renders and the data loads **with no credential prompt**.
+3. **File → Save As → Power BI report (.pbix)**.
+4. Upload that `.pbix` to Partner Center.
+
+Two things cannot be done from this repository:
+
+- A `.pbix` stores its model in a `DataModel` part that is a **binary Analysis
+  Services backup image**, so it cannot be produced headlessly.
+- `pbi-tools compile` is not a workaround. On the owner's machine it fails with
+  `System.MissingMethodException: Method not found: 'Void
+  Microsoft.PowerBI.Packaging.PowerBIPackager.Save(...)'` because pbi-tools 1.2.0
+  is incompatible with the installed Power BI Desktop 2.150.2102.0 packaging API.
+  Its `extract` and `convert` commands work; `compile` does not. Nothing in this
+  repository depends on pbi-tools.
+
+> This project has **not** been opened in Power BI Desktop from this repository.
+> Everything the automated tests assert is structural, plus a functional JSDOM
+> check of the embedded bundle. Step 2 above is the real validation gate.
 
 ## Field bindings
 
-The visual binds four roles, all of which are real `dataRoles[].name` values in
+The visual binds four roles, all real `dataRoles[].name` values in
 `capabilities.json`:
 
 | Role | Field | Aggregation |
@@ -90,7 +146,7 @@ the same story.
 ## Embedded visual format
 
 `CustomVisuals/<GUID>/**` is generated to match the format produced by the
-official packager. That format was read directly from the installed
+official packager, read directly from the installed
 `node_modules/powerbi-visuals-webpack-plugin/src/index.js`:
 
 - `generatePbiviz()` writes exactly `package.json` and

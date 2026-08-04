@@ -1,22 +1,31 @@
 /**
- * Generates the offline Microsoft AppSource sample report as a Power BI Project
- * (PBIP) under `samples/`, rebuilding it deterministically from the current
- * `pbiviz.json`, `capabilities.json`, `dist/visual.js`, `style/visual.less`,
- * `assets/icon.png`, and `stringResources/**`.
+ * Generates the offline Microsoft AppSource sample report as a native Power BI
+ * Project (PBIP), rebuilding it deterministically from the current `pbiviz.json`,
+ * `capabilities.json`, `dist/visual.js`, `style/visual.less`, `assets/icon.png`,
+ * and `stringResources/**`.
  *
- * Why PBIP and not .pbix: a .pbix stores its model in a `DataModel` part that is a
- * binary Analysis Services backup image, which cannot be produced headlessly. A .pbit
- * would additionally need a UTF-16LE legacy `Report/Layout` blob, a `DataModelSchema`
- * part, and a hand-built `[Content_Types].xml`. PBIP is plain JSON and Power Query M
- * and uses the PBIR report format that offline custom-visual embedding requires. The
- * owner performs a one-time Power BI Desktop "Save As .pbix"; see
- * docs/partner-center-submission.md.
+ * Format choices, and why:
  *
- * Offline guarantee: the semantic model's only partition is an inline `#table(...)`
- * literal. There is no SQL, web, file, folder, or OData source, so a refresh needs no
- * credentials and makes no external connection. The visual itself is embedded in the
- * report via `resourcePackages`, NOT via `publicCustomVisuals`, which would resolve
- * from the AppSource store at open time and therefore would not be offline.
+ * - **PBIP, not .pbix or .pbit.** A .pbix stores its model in a `DataModel` part that
+ *   is a binary Analysis Services backup image, which cannot be produced headlessly.
+ *   `pbi-tools compile` is not an option either: it throws
+ *   `System.MissingMethodException: Method not found: 'Void
+ *   Microsoft.PowerBI.Packaging.PowerBIPackager.Save(...)'` against Power BI Desktop
+ *   2.150.2102.0. PBIP is plain text, publicly documented, and Power BI Desktop opens
+ *   it directly. The owner performs a one-time File > Save As > .pbix.
+ *
+ * - **TMDL semantic model** (`definition/` folder) rather than TMSL `model.bim`.
+ *
+ * - **DAX calculated table** via `DATATABLE(...)` rather than a Power Query partition.
+ *   A calculated table has *no data source at all*, so there is no credential prompt
+ *   and no refresh dependency. This is a stronger offline guarantee than an inline
+ *   Power Query literal, which still counts as a query.
+ *
+ * - **Visual embedded under `Report/CustomVisuals/<GUID>/`** and declared in
+ *   `report.json` `resourcePackages`. Microsoft documents this folder as holding
+ *   *private* custom visuals, while AppSource and Organization visuals are loaded
+ *   automatically by Desktop. `publicCustomVisuals` would therefore resolve from the
+ *   AppSource store at open time and would not be offline.
  *
  * Usage: npm run build && npm run sample:report
  */
@@ -28,12 +37,28 @@ const { triangleRecords } = require("./cohort-dataset");
 
 const root = path.resolve(__dirname, "..");
 const samples = path.join(root, "samples");
-const projectName = "atlyn-cohort-retention-sample";
+const projectName = "AtlynSample";
 const reportFolder = `${projectName}.Report`;
 const modelFolder = `${projectName}.SemanticModel`;
 const tableName = "CohortRetention";
 const COHORT_COUNT = 16;
 const PERIOD_COUNT = 12;
+
+/**
+ * Both of these MUST be "4.0" or higher for the exploded `definition/` folders to be
+ * loaded at all. Microsoft documents that version "1.0" means the definition is stored
+ * in the single legacy file instead:
+ *
+ *   definition.pbir  — 1.0: report definition must be PBIR-Legacy in report.json.
+ *                      4.0+: PBIR-Legacy or PBIR (\definition folder).
+ *   definition.pbism — 1.0: semantic model definition must be TMSL in model.bim.
+ *                      4.0+: TMSL or TMDL (\definition folder).
+ *
+ * https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-report
+ * https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-dataset
+ */
+const PBIR_DEFINITION_VERSION = "4.0";
+const PBISM_DEFINITION_VERSION = "4.0";
 
 /** Deterministic PBIR object names, so regenerating never churns the diff. */
 function stableName(seed) {
@@ -64,6 +89,11 @@ function write(relativePath, contents) {
 
 function writeJson(relativePath, value) {
   return write(relativePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/** TMDL is indentation scoped and Power BI Desktop writes it tab-indented. */
+function tmdl(lines) {
+  return `${lines.join("\n")}\n`;
 }
 
 /**
@@ -167,99 +197,77 @@ function buildEmbeddedVisual(pbiviz, capabilities) {
   return { descriptor, definition };
 }
 
-/** Inline literal partition. Deliberately the only data source in the model. */
-function powerQueryExpression() {
+/**
+ * A DAX calculated table. Deliberately the only content in the model, and deliberately
+ * NOT a Power Query partition, so the semantic model has no data source whatsoever.
+ */
+function dataTableExpression() {
   const records = triangleRecords(COHORT_COUNT, PERIOD_COUNT);
   const rows = records.map(
     (record, index) =>
-      `            {"${record.cohort}", ${record.period}, ${record.retained}, ${record.cohortSize}}` +
+      `\t\t\t\t        {"${record.cohort}", ${record.period}, ${record.retained}, ${record.cohortSize}}` +
       (index === records.length - 1 ? "" : ",")
   );
   return [
-    "let",
-    "    Source = #table(",
-    "        type table [Cohort = text, Period = Int64.Type, Retained = Int64.Type, CohortSize = Int64.Type],",
-    "        {",
+    "\t\tsource =",
+    "\t\t\t\tDATATABLE(",
+    '\t\t\t\t    "Cohort", STRING,',
+    '\t\t\t\t    "Period", INTEGER,',
+    '\t\t\t\t    "Retained", INTEGER,',
+    '\t\t\t\t    "CohortSize", INTEGER,',
+    "\t\t\t\t    {",
     ...rows,
-    "        }",
-    "    )",
-    "in",
-    "    Source"
+    "\t\t\t\t    }",
+    "\t\t\t\t)"
   ];
 }
 
-function buildSemanticModel() {
-  return {
-    name: projectName,
-    compatibilityLevel: 1567,
-    model: {
-      culture: "en-US",
-      dataAccessOptions: {
-        legacyRedirects: true,
-        returnErrorValuesAsNull: true
-      },
-      defaultPowerBIDataSourceVersion: "powerBI_V3",
-      sourceQueryCulture: "en-US",
-      tables: [
-        {
-          name: tableName,
-          lineageTag: stableName("table-cohort-retention"),
-          columns: [
-            {
-              name: "Cohort",
-              dataType: "string",
-              sourceColumn: "Cohort",
-              summarizeBy: "none",
-              lineageTag: stableName("column-cohort"),
-              annotations: [{ name: "SummarizationSetBy", value: "Automatic" }]
-            },
-            {
-              name: "Period",
-              dataType: "int64",
-              sourceColumn: "Period",
-              summarizeBy: "none",
-              formatString: "0",
-              lineageTag: stableName("column-period"),
-              annotations: [{ name: "SummarizationSetBy", value: "User" }]
-            },
-            {
-              name: "Retained",
-              dataType: "int64",
-              sourceColumn: "Retained",
-              summarizeBy: "sum",
-              formatString: "#,0",
-              lineageTag: stableName("column-retained"),
-              annotations: [{ name: "SummarizationSetBy", value: "Automatic" }]
-            },
-            {
-              name: "CohortSize",
-              dataType: "int64",
-              sourceColumn: "CohortSize",
-              summarizeBy: "sum",
-              formatString: "#,0",
-              lineageTag: stableName("column-cohort-size"),
-              annotations: [{ name: "SummarizationSetBy", value: "Automatic" }]
-            }
-          ],
-          partitions: [
-            {
-              name: tableName,
-              mode: "import",
-              source: {
-                type: "m",
-                expression: powerQueryExpression()
-              }
-            }
-          ],
-          annotations: [{ name: "PBI_ResultType", value: "Table" }]
-        }
-      ],
-      annotations: [
-        { name: "PBI_QueryOrder", value: JSON.stringify([tableName]) },
-        { name: "PBI_ProTooling", value: JSON.stringify(["DevMode"]) }
-      ]
-    }
-  };
+function buildTableTmdl() {
+  return tmdl([
+    "/// Offline sample cohort dataset used to demonstrate Atlyn Cohort Retention.",
+    "/// Sourced from a DAX calculated table, so the model has no data source and",
+    "/// never prompts for credentials.",
+    `table ${tableName}`,
+    "",
+    "\tcolumn Cohort",
+    "\t\tsummarizeBy: none",
+    "\t\tisNameInferred",
+    "\t\tsourceColumn: [Cohort]",
+    "",
+    "\tcolumn Period",
+    "\t\tsummarizeBy: none",
+    "\t\tisNameInferred",
+    "\t\tsourceColumn: [Period]",
+    "",
+    "\tcolumn Retained",
+    "\t\tsummarizeBy: sum",
+    "\t\tisNameInferred",
+    "\t\tsourceColumn: [Retained]",
+    "",
+    "\tcolumn CohortSize",
+    "\t\tsummarizeBy: sum",
+    "\t\tisNameInferred",
+    "\t\tsourceColumn: [CohortSize]",
+    "",
+    `\tpartition ${tableName} = calculated`,
+    "\t\tmode: import",
+    ...dataTableExpression()
+  ]);
+}
+
+function buildModelTmdl() {
+  return tmdl([
+    "model Model",
+    "\tculture: en-US",
+    "\tdefaultPowerBIDataSourceVersion: powerBI_V3",
+    "\tsourceQueryCulture: en-US",
+    "",
+    `ref table ${tableName}`
+  ]);
+}
+
+function buildDatabaseTmdl() {
+  return tmdl(["database", "\tcompatibilityLevel: 1550"]);
 }
 
 function projection(role, property, aggregate) {
@@ -344,12 +352,18 @@ function main() {
   const written = [];
 
   written.push(
+    write(
+      ".gitignore",
+      ["**/.pbi/localSettings.json", "**/.pbi/cache.abf", ""].join("\n")
+    )
+  );
+
+  written.push(
     writeJson(`${projectName}.pbip`, {
       $schema:
         "https://developer.microsoft.com/json-schemas/fabric/pbip/pbipProperties/1.0.0/schema.json",
       version: "1.0",
-      artifacts: [{ report: { path: reportFolder } }],
-      settings: { enableAutoRecovery: true }
+      artifacts: [{ report: { path: reportFolder } }]
     })
   );
 
@@ -357,17 +371,19 @@ function main() {
     writeJson(`${modelFolder}/definition.pbism`, {
       $schema:
         "https://developer.microsoft.com/json-schemas/fabric/item/semanticModel/definitionProperties/1.0.0/schema.json",
-      version: "4.2",
+      version: PBISM_DEFINITION_VERSION,
       settings: {}
     })
   );
-  written.push(writeJson(`${modelFolder}/model.bim`, buildSemanticModel()));
+  written.push(write(`${modelFolder}/definition/database.tmdl`, buildDatabaseTmdl()));
+  written.push(write(`${modelFolder}/definition/model.tmdl`, buildModelTmdl()));
+  written.push(write(`${modelFolder}/definition/tables/${tableName}.tmdl`, buildTableTmdl()));
 
   written.push(
     writeJson(`${reportFolder}/definition.pbir`, {
       $schema:
         "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/1.0.0/schema.json",
-      version: "4.0",
+      version: PBIR_DEFINITION_VERSION,
       datasetReference: { byPath: { path: `../${modelFolder}` } }
     })
   );
@@ -375,7 +391,7 @@ function main() {
     writeJson(`${reportFolder}/definition/version.json`, {
       $schema:
         "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
-      version: "2.0.0"
+      version: PBIR_DEFINITION_VERSION
     })
   );
   written.push(
@@ -439,8 +455,8 @@ function main() {
     console.log(`Wrote samples/${relativePath}`);
   }
   console.log(
-    `Sample report regenerated: ${triangleRecords(COHORT_COUNT, PERIOD_COUNT).length} inline rows, ` +
-      `${COHORT_COUNT} cohorts x ${PERIOD_COUNT} relative periods, no external data source.`
+    `Sample report regenerated: ${triangleRecords(COHORT_COUNT, PERIOD_COUNT).length} DATATABLE rows, ` +
+      `${COHORT_COUNT} cohorts x ${PERIOD_COUNT} relative periods, no data source.`
   );
 }
 

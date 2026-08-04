@@ -192,13 +192,17 @@ for (const value of [
 }
 
 const sampleRoot = path.join(root, "samples");
-const sampleProject = "atlyn-cohort-retention-sample";
+const sampleProject = "AtlynSample";
 const sampleReport = path.join(sampleRoot, `${sampleProject}.Report`);
 const sampleModel = path.join(sampleRoot, `${sampleProject}.SemanticModel`);
+const sampleModelDefinition = path.join(sampleModel, "definition");
 for (const relativePath of [
+  ".gitignore",
   `${sampleProject}.pbip`,
   path.join(`${sampleProject}.SemanticModel`, "definition.pbism"),
-  path.join(`${sampleProject}.SemanticModel`, "model.bim"),
+  path.join(`${sampleProject}.SemanticModel`, "definition", "database.tmdl"),
+  path.join(`${sampleProject}.SemanticModel`, "definition", "model.tmdl"),
+  path.join(`${sampleProject}.SemanticModel`, "definition", "tables", "CohortRetention.tmdl"),
   path.join(`${sampleProject}.Report`, "definition.pbir"),
   path.join(`${sampleProject}.Report`, "definition", "version.json"),
   path.join(`${sampleProject}.Report`, "definition", "report.json"),
@@ -214,6 +218,21 @@ for (const relativePath of [
 ]) {
   assert(fs.existsSync(path.join(sampleRoot, relativePath)), `the sample report is missing ${relativePath}`);
 }
+
+// Microsoft documents definition version "1.0" as meaning the definition lives in the
+// single legacy file. The exploded definition/ folders require "4.0" or higher.
+const samplePbir = JSON.parse(fs.readFileSync(path.join(sampleReport, "definition.pbir"), "utf8"));
+const samplePbism = JSON.parse(fs.readFileSync(path.join(sampleModel, "definition.pbism"), "utf8"));
+assert(Number(samplePbir.version) >= 4, "definition.pbir must declare version 4.0 or higher for PBIR");
+assert(Number(samplePbism.version) >= 4, "definition.pbism must declare version 4.0 or higher for TMDL");
+assert(
+  !fs.existsSync(path.join(sampleModel, "model.bim")),
+  "a leftover model.bim would override the TMDL definition folder"
+);
+assert(
+  !fs.existsSync(path.join(sampleReport, "report.json")),
+  "a leftover report.json would override the PBIR definition folder"
+);
 
 const sampleReportJson = JSON.parse(
   fs.readFileSync(path.join(sampleReport, "definition", "report.json"), "utf8")
@@ -247,24 +266,49 @@ for (const role of boundRoles) {
   assert(roleNames.has(role), `the sample visual binds unknown data role ${role}`);
 }
 
-const sampleModelText = fs.readFileSync(path.join(sampleModel, "model.bim"), "utf8");
-for (const token of [
-  "Sql.Database",
-  "Web.Contents",
-  "File.Contents",
-  "Folder.Files",
-  "Excel.Workbook",
-  "Csv.Document",
-  "OData.Feed",
-  "Odbc.DataSource",
-  "AzureStorage.",
-  "SharePoint.",
-  "http://",
-  "https://"
-]) {
+function listTmdl(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) return listTmdl(full);
+    return entry.name.endsWith(".tmdl") ? [full] : [];
+  });
+}
+
+const sampleTable = fs.readFileSync(
+  path.join(sampleModelDefinition, "tables", "CohortRetention.tmdl"),
+  "utf8"
+);
+assert(
+  sampleTable.includes("partition CohortRetention = calculated") && sampleTable.includes("DATATABLE("),
+  "the sample semantic model must source data from a DAX calculated table"
+);
+
+const sampleTmdlFiles = listTmdl(sampleModelDefinition);
+assert(sampleTmdlFiles.length > 0, "the sample semantic model has no TMDL files");
+for (const file of sampleTmdlFiles) {
+  const contents = fs.readFileSync(file, "utf8");
+  for (const token of [
+    "Sql.Database",
+    "Web.Contents",
+    "File.Contents",
+    "Folder.Files",
+    "Excel.Workbook",
+    "Csv.Document",
+    "OData.Feed",
+    "Odbc.DataSource",
+    "AzureStorage.",
+    "SharePoint.",
+    "http://",
+    "https://"
+  ]) {
+    assert(
+      !contents.includes(token),
+      `the sample semantic model must be fully offline but ${path.basename(file)} references ${token}`
+    );
+  }
   assert(
-    !sampleModelText.includes(token),
-    `the sample semantic model must be fully offline but references ${token}`
+    !/partition .* = m\b/.test(contents),
+    `${path.basename(file)} declares a Power Query partition instead of a calculated table`
   );
 }
 

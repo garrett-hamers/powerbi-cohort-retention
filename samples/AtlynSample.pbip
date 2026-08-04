@@ -4,11 +4,8 @@
   "artifacts": [
     {
       "report": {
-        "path": "atlyn-cohort-retention-sample.Report"
+        "path": "AtlynSample.Report"
       }
     }
-  ],
-  "settings": {
-    "enableAutoRecovery": true
-  }
+  ]
 }

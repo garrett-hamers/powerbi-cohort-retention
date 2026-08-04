@@ -163,28 +163,74 @@ kind — a source gate in `npm run package` enforces that.
 
 | Requirement | Value |
 | --- | --- |
-| Path | `samples/atlyn-cohort-retention-sample.pbip` |
-| Format | Power BI Project (PBIP), PBIR report definition |
-| Data | 82 inline `#table(...)` literal rows, 16 monthly cohorts x 12 relative periods |
+| Path | `samples/AtlynSample.pbip` |
+| Format | Native Power BI Project (PBIP): PBIR report definition, TMDL semantic model |
+| Data | DAX calculated table, 82 `DATATABLE(...)` rows, 16 monthly cohorts x 12 relative periods |
+| Data sources | **None at all** |
 | External connections | **None** |
-| Visual delivery | Embedded via `resourcePackages`, not `publicCustomVisuals` |
+| Visual delivery | Embedded via `resourcePackages` + `Report/CustomVisuals/<GUID>/`, not `publicCustomVisuals` |
 | Regenerate | `npm run build && npm run sample:report` |
 
 See `samples/README.md` for the full layout and field bindings.
 
 ### Why this is a PBIP and not a `.pbix`
 
-A `.pbix` stores its model in a `DataModel` part that is a **binary Analysis
-Services backup image**, which cannot be produced headlessly. A `.pbit` would
-additionally require a UTF-16LE legacy `Report/Layout` blob, a `DataModelSchema`
-part, and a hand-built `[Content_Types].xml`, none of which this repository can
-validate — producing one would be guesswork. PBIP is plain JSON plus Power Query
-M and uses the PBIR format that offline custom-visual embedding requires.
+Two independent blockers, both verified:
+
+1. A `.pbix` stores its model in a `DataModel` part that is a **binary Analysis
+   Services backup image**, which cannot be produced headlessly.
+2. `pbi-tools compile` is **not** a workaround. On the owner's machine it fails
+   with `System.MissingMethodException: Method not found: 'Void
+   Microsoft.PowerBI.Packaging.PowerBIPackager.Save(...)'` — pbi-tools 1.2.0 is
+   incompatible with the installed Power BI Desktop 2.150.2102.0 packaging API. Its
+   `extract` and `convert` commands work; `compile` does not. Nothing in this
+   repository depends on pbi-tools.
+
+PBIP is plain text, publicly documented, and Power BI Desktop opens it directly.
+
+### Offline guarantee: a DAX calculated table, not a query
+
+The semantic model has **no data source at all**. Its single table is a DAX
+calculated table:
+
+```tmdl
+	partition CohortRetention = calculated
+		mode: import
+		source =
+				DATATABLE("Cohort", STRING, "Period", INTEGER, ... )
+```
+
+This is stronger than an inline Power Query literal such as `#table(...)`, which
+is still a query. A calculated table is evaluated by the engine, so there is
+nothing to authenticate, no credential prompt, and no refresh dependency. There is
+deliberately no `dataSources.tmdl` and no `expressions.tmdl`.
+
+### Definition versions must be 4.0
+
+`definition.pbir` and `definition.pbism` both declare `"version": "4.0"`. Microsoft
+documents that version `1.0` means the definition is stored in the single legacy
+file instead:
+
+| File | Version | Supported formats |
+| --- | --- | --- |
+| `definition.pbir` | 1.0 | Report definition must be stored as PBIR-Legacy in the `report.json` file. |
+| `definition.pbir` | 4.0 or higher | PBIR-Legacy (`report.json`) or PBIR (`\definition` folder). |
+| `definition.pbism` | 1.0 | Semantic model definition must be stored as TMSL in the `model.bim` file. |
+| `definition.pbism` | 4.0 or above | TMSL (`model.bim`) or TMDL (`\definition` folder). |
+
+At `1.0` Power BI Desktop would ignore the `definition/` folders entirely. Both
+values are single named constants in `scripts/generate-sample-report.js`, and tests
+assert they are at least 4 and that no stale `model.bim` or `report.json` exists to
+shadow the folders.
+
+PBIR and TMDL are documented by Microsoft as **preview** features. Opening and
+re-saving the project requires the matching preview options in Power BI Desktop
+under **File > Options and settings > Options > Preview features**.
 
 ### Required one-time manual step
 
-1. Open `samples/atlyn-cohort-retention-sample.pbip` in Power BI Desktop.
-2. Confirm the visual renders and the data refreshes **with no credential prompt**.
+1. Open `samples/AtlynSample.pbip` in Power BI Desktop.
+2. Confirm the visual renders and the data loads **with no credential prompt**.
 3. **File → Save As → Power BI report (.pbix)**.
 4. Upload that `.pbix` to Partner Center as the sample report.
 
@@ -196,11 +242,12 @@ M and uses the PBIR format that offline custom-visual embedding requires.
 ### Offline guarantee, enforced
 
 `tests/sample-report.test.ts` and `scripts/certification-audit.js` both fail the
-build if `model.bim` contains `Sql.Database`, `Web.Contents`, `File.Contents`,
+build if any `.tmdl` file contains `Sql.Database`, `Web.Contents`, `File.Contents`,
 `Folder.Files`, `Excel.Workbook`, `Csv.Document`, `OData.Feed`, `Odbc.DataSource`,
-`AzureStorage.*`, `SharePoint.*`, or a bare `http://` / `https://`. They also fail
-if `publicCustomVisuals` appears in `report.json`, since that resolves the visual
-from the AppSource store at open time rather than from the embedded package.
+`AzureStorage.*`, `SharePoint.*`, or a bare `http://` / `https://`, or if it
+declares a `partition ... = m` Power Query partition instead of a calculated table.
+They also fail if `publicCustomVisuals` appears in `report.json`, since that
+resolves the visual from the AppSource store rather than from the embedded package.
 
 ### Risk: the visual GUID is not in the toolchain's format
 
@@ -323,13 +370,12 @@ records the resolved submission fields, asset hashes and dimensions, an empty
 
 These cannot be completed from this repository.
 
-1. **Convert the sample report to `.pbix`.** Open
-   `samples/atlyn-cohort-retention-sample.pbip` in Power BI Desktop, confirm the
-   visual renders and the data refreshes with **no credential prompt**, then
-   **File → Save As → Power BI report (.pbix)**. The PBIP itself is generated and
-   validated here; the `.pbix` conversion cannot be done headlessly because a
-   `.pbix` model is a binary Analysis Services backup image. See
-   [section 8b](#8b-sample-report-offline).
+1. **Convert the sample report to `.pbix`.** Open `samples/AtlynSample.pbip` in
+   Power BI Desktop, confirm the visual renders and the data loads with **no
+   credential prompt**, then **File → Save As → Power BI report (.pbix)**. The PBIP
+   is generated and validated here; the `.pbix` conversion cannot be done
+   headlessly, and `pbi-tools compile` is broken against the installed Desktop
+   version. See [section 8b](#8b-sample-report-offline).
 2. **Confirm Power BI Desktop accepts the hyphenated visual GUID** during step 1.
    This is an open risk, see the GUID risk subsection of section 8b.
 3. **Create or confirm the Partner Center account** and the Power BI visual offer,
