@@ -37,13 +37,15 @@ const TERMS_URL = "https://atlyn.io/legal/terms";
 const RESERVED_TLDS = ["example", "invalid", "test", "localhost"];
 
 /** Requirements only the account owner can satisfy outside this repository. */
-const OWNER_ACTIONS = [
-  "Open samples/atlyn-cohort-retention-sample.pbip in Power BI Desktop, confirm the visual renders and the data refreshes with no credential prompt, then File > Save As > Power BI report (.pbix) and upload that .pbix to Partner Center. The PBIP is generated and validated in this repository; the .pbix conversion cannot be done headlessly because a .pbix model is a binary Analysis Services backup image.",
-  "Confirm during that Desktop step that Power BI accepts the hyphenated visual GUID. The official tooling generates GUIDs that are valid JavaScript identifiers, and this one is not; see the GUID risk section of docs/partner-center-submission.md.",
-  "Create or confirm the Microsoft Partner Center account and the Power BI visual offer, configured as a FREE offer with no paid or transactable billing.",
-  "Paste the privacy policy URL, support URL, and EULA into the Partner Center offer listing, and upload the logo and screenshots.",
-  "Re-publish the release manifest and the Azure Blob artifact, because the packaged .pbiviz hash changed when the placeholder icon was replaced with the production icon."
-];
+function buildOwnerActions(version) {
+  return [
+    "Open samples/atlyn-cohort-retention-sample.pbip in Power BI Desktop, confirm the visual renders and the data refreshes with no credential prompt, then File > Save As > Power BI report (.pbix) and upload that .pbix to Partner Center. The PBIP is generated and validated in this repository; the .pbix conversion cannot be done headlessly because a .pbix model is a binary Analysis Services backup image.",
+    "Confirm during that Desktop step that Power BI accepts the hyphenated visual GUID. The official tooling generates GUIDs that are valid JavaScript identifiers, and this one is not; see the GUID risk section of docs/partner-center-submission.md.",
+    "Create or confirm the Microsoft Partner Center account and the Power BI visual offer, configured as a FREE offer with no paid or transactable billing.",
+    "Paste the privacy policy URL, support URL, and EULA into the Partner Center offer listing, and upload the logo and screenshots.",
+    `Re-publish the release manifest and the Azure Blob artifact under the version-keyed path cohort-retention/${version}/atlyn-cohort-retention.pbiviz, because the packaged .pbiviz bytes changed and must not be published under an already-distributed version number.`
+  ];
+}
 
 function toRelative(absolutePath) {
   return path.relative(root, absolutePath).split(path.sep).join("/");
@@ -226,6 +228,7 @@ function main() {
   const sourceIcon = describePng(sourceIconPath, { required: true });
   const partnerCenterLogo = describePng(partnerCenterLogoPath, { required: false });
   const screenshots = describeScreenshots();
+  const ownerActions = buildOwnerActions(submission.version);
   const blockers = [
     ...buildSubmissionBlockers(submission),
     ...buildAssetBlockers(sourceIcon, partnerCenterLogo, screenshots)
@@ -240,7 +243,7 @@ function main() {
     eula: { path: toRelative(eulaPath), exists: fs.existsSync(eulaPath) },
     dossier: { path: toRelative(dossierPath), exists: fs.existsSync(dossierPath) },
     blockers,
-    ownerActions: OWNER_ACTIONS
+    ownerActions
   };
 
   fs.mkdirSync(dist, { recursive: true });
@@ -255,7 +258,7 @@ function main() {
   } else {
     console.log("Publication readiness assets passed.");
     console.log("Remaining owner-controlled actions (outside this repository):");
-    for (const action of OWNER_ACTIONS) {
+    for (const action of ownerActions) {
       console.log(`- ${action}`);
     }
   }
