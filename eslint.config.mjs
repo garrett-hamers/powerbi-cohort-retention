@@ -41,7 +41,11 @@ export default [
     },
     rules: {
       "no-console": "off",
-      "powerbi-visuals/non-literal-fs-path": "off"
+      "powerbi-visuals/non-literal-fs-path": "off",
+      // Build tooling only. The loopback DevTools/harness endpoints are never HTTPS,
+      // and the visual's own source is still gated by this rule plus the
+      // certification audit's network-URL check.
+      "powerbi-visuals/no-http-string": "off"
     }
   }
 ];

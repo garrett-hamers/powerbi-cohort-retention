@@ -74,11 +74,102 @@ describe("clean visual package metadata", () => {
     expect(packageJson.devDependencies.typescript).toBe("5.9.3");
     expect(packageJson.scripts.eslint).toBe("npx eslint . --ext .js,.jsx,.ts,.tsx");
     expect(packageJson.scripts.package).toContain("certification:audit");
-    expect(packageJson.scripts.package).toContain("publication:assets");
+    expect(packageJson.scripts.package).toContain("publication:assets:enforce");
     expect(packageJson.scripts.package).toContain("reproducibility-check.js");
     expect(fs.existsSync(path.join(root, "eslint.config.mjs"))).toBe(true);
     expect(fs.existsSync(path.join(root, "scripts", "certification-audit.js"))).toBe(true);
     expect(fs.existsSync(path.join(root, "scripts", "publication-assets.js"))).toBe(true);
     expect(fs.existsSync(path.join(root, "scripts", "reproducibility-check.js"))).toBe(true);
+  });
+
+  test("enforces the publication asset gate in CI", () => {
+    const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
+    expect(workflow).toContain("npm run publication:assets:enforce");
+  });
+});
+
+describe("AppSource submission assets", () => {
+  const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  function readPng(relativePath: string): { width: number; height: number; sizeBytes: number } {
+    const bytes = fs.readFileSync(path.join(root, relativePath));
+    expect(bytes.length).toBeGreaterThan(24);
+    expect(bytes.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true);
+    expect(bytes.subarray(12, 16).toString("ascii")).toBe("IHDR");
+    return {
+      width: bytes.readUInt32BE(16),
+      height: bytes.readUInt32BE(20),
+      sizeBytes: bytes.length
+    };
+  }
+
+  function screenshotPaths(): string[] {
+    return fs
+      .readdirSync(path.join(root, "assets", "screenshots"))
+      .filter((entry) => entry.toLowerCase().endsWith(".png"))
+      .sort()
+      .map((entry) => `assets/screenshots/${entry}`);
+  }
+
+  test("ships a 20x20 visualization pane icon that is no longer a placeholder", () => {
+    const icon = readPng("assets/icon.png");
+    expect(icon.width).toBe(20);
+    expect(icon.height).toBe(20);
+  });
+
+  test("ships an exactly 300x300 Partner Center logo", () => {
+    const logo = readPng("assets/partner-center-logo-300.png");
+    expect(logo.width).toBe(300);
+    expect(logo.height).toBe(300);
+  });
+
+  test("ships 1 to 5 screenshots at exactly 1366x768 and at most 1024 KB", () => {
+    const paths = screenshotPaths();
+    expect(paths.length).toBeGreaterThanOrEqual(1);
+    expect(paths.length).toBeLessThanOrEqual(5);
+    paths.forEach((relativePath) => {
+      const screenshot = readPng(relativePath);
+      expect(screenshot.width).toBe(1366);
+      expect(screenshot.height).toBe(768);
+      expect(screenshot.sizeBytes).toBeLessThanOrEqual(1024 * 1024);
+    });
+  });
+
+  test("declares every required pbiviz submission field with a usable value", () => {
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
+    expect(pbiviz.visual.name).toBeTruthy();
+    expect(pbiviz.visual.displayName).toBeTruthy();
+    expect(pbiviz.visual.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
+    expect(pbiviz.visual.version).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
+    expect(pbiviz.visual.description.length).toBeGreaterThanOrEqual(120);
+    expect(pbiviz.visual.supportUrl).toBe("https://atlyn.io/contact");
+    expect(pbiviz.author.name).toBe("Atlyn");
+    expect(pbiviz.author.email).toBe("atlyn.help@gmail.com");
+    expect(pbiviz.assets.icon).toBe("assets/icon.png");
+  });
+
+  test("rejects reserved contact domains and non-https listing URLs", () => {
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
+    expect(pbiviz.author.email).not.toMatch(/@(?:[\w.-]+\.)?(?:example|invalid|test|localhost)$/i);
+    expect(pbiviz.visual.supportUrl.startsWith("https://")).toBe(true);
+    expect(pbiviz.visual.gitHubUrl.startsWith("https://")).toBe(true);
+  });
+
+  test("ships a EULA and a dossier that records the concrete submission values", () => {
+    expect(fs.existsSync(path.join(root, "EULA.md"))).toBe(true);
+    const dossier = fs.readFileSync(
+      path.join(root, "docs", "partner-center-submission.md"),
+      "utf8"
+    );
+    [
+      "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11",
+      "https://atlyn.io/contact",
+      "https://atlyn.io/legal/privacy",
+      "atlyn.help@gmail.com",
+      "assets/partner-center-logo-300.png",
+      "assets/icon.png",
+      "EULA.md",
+      ...screenshotPaths()
+    ].forEach((value) => expect(dossier).toContain(value));
   });
 });
