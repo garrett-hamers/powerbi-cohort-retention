@@ -10,8 +10,10 @@ const capabilities = readJson("capabilities.json");
 const packageJson = readJson("package.json");
 const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), "utf8");
 const metadataPath = path.join(root, "dist", "package-metadata.json");
+const publicationMetadataPath = path.join(root, "dist", "publication-readiness.json");
 const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
 const expectedGuid = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(root, relativePath), "utf8"));
@@ -21,6 +23,16 @@ function assert(condition, message) {
   if (!condition) throw new Error(`Certification audit failed: ${message}`);
 }
 
+function readPngDimensions(bytes, relativePath) {
+  assert(bytes.length >= 24, `${relativePath} is not a valid PNG (too small)`);
+  assert(bytes.subarray(0, 8).equals(pngSignature), `${relativePath} does not have a PNG signature`);
+  assert(bytes.subarray(12, 16).toString("ascii") === "IHDR", `${relativePath} is missing an IHDR chunk`);
+  return {
+    width: bytes.readUInt32BE(16),
+    height: bytes.readUInt32BE(20)
+  };
+}
+
 assert(pbiviz.visual.guid === expectedGuid, "the visual GUID changed");
 assert(/^\d+\.\d+\.\d+\.\d+$/.test(pbiviz.visual.version), "visual version must have four numeric parts");
 assert(pbiviz.apiVersion === "5.11.1", "the API version changed unexpectedly");
@@ -28,6 +40,7 @@ assert(Array.isArray(pbiviz.externalJS) && pbiviz.externalJS.length === 0, "exte
 assert(Array.isArray(capabilities.privileges) && capabilities.privileges.length === 0, "privileges must remain empty");
 assert(fs.existsSync(packagePath) && fs.statSync(packagePath).size > 0, "the .pbiviz package is missing");
 assert(fs.existsSync(metadataPath), "package metadata is missing");
+assert(fs.existsSync(publicationMetadataPath), "publication readiness metadata is missing");
 assert(packageJson.devDependencies["powerbi-visuals-tools"], "direct Power BI tooling is missing");
 assert(packageJson.devDependencies["eslint-plugin-powerbi-visuals"], "Power BI ESLint plugin is missing");
 assert(
@@ -75,6 +88,7 @@ for (const [propertyName, property] of Object.entries(capabilities.objects.matri
 }
 
 const metadata = readJson(path.relative(root, metadataPath));
+const publicationMetadata = readJson(path.relative(root, publicationMetadataPath));
 const packageSha256 = crypto.createHash("sha256").update(fs.readFileSync(packagePath)).digest("hex");
 assert(metadata.guid === expectedGuid, "package metadata GUID does not match source");
 assert(metadata.packageSha256 === packageSha256, "package hash does not match package metadata");
@@ -85,11 +99,28 @@ assert(
   "package metadata source files do not match package inputs"
 );
 assert(metadata.sourceSha256 === sourceManifest.sha256, "package source hash does not match package inputs");
+assert(typeof publicationMetadata.status === "string", "publication readiness status is missing");
+assert(Array.isArray(publicationMetadata.blockers), "publication readiness blockers are missing");
+assert(publicationMetadata.sourceIcon?.path === "assets/icon.png", "publication metadata icon path is invalid");
+const iconBytes = fs.readFileSync(path.join(root, publicationMetadata.sourceIcon.path));
+const iconDimensions = readPngDimensions(iconBytes, publicationMetadata.sourceIcon.path);
+assert(iconDimensions.width === publicationMetadata.sourceIcon.width, "publication icon width metadata mismatch");
+assert(iconDimensions.height === publicationMetadata.sourceIcon.height, "publication icon height metadata mismatch");
+assert(
+  crypto.createHash("sha256").update(iconBytes).digest("hex") === publicationMetadata.sourceIcon.sha256,
+  "publication icon hash metadata mismatch"
+);
 
 const distFiles = fs.readdirSync(path.join(root, "dist")).sort();
 assert(
   JSON.stringify(distFiles) ===
-    JSON.stringify(["atlyn-cohort-retention.pbiviz", "package-metadata.json", "visual.js", "visual.js.map"]),
+    JSON.stringify([
+      "atlyn-cohort-retention.pbiviz",
+      "package-metadata.json",
+      "publication-readiness.json",
+      "visual.js",
+      "visual.js.map"
+    ]),
   "dist contains stale or missing generated artifacts"
 );
 

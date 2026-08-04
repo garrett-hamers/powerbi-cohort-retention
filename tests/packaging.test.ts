@@ -74,9 +74,11 @@ describe("clean visual package metadata", () => {
     expect(packageJson.devDependencies.typescript).toBe("5.9.3");
     expect(packageJson.scripts.eslint).toBe("npx eslint . --ext .js,.jsx,.ts,.tsx");
     expect(packageJson.scripts.package).toContain("certification:audit");
+    expect(packageJson.scripts.package).toContain("publication:assets");
     expect(packageJson.scripts.package).toContain("reproducibility-check.js");
     expect(fs.existsSync(path.join(root, "eslint.config.mjs"))).toBe(true);
     expect(fs.existsSync(path.join(root, "scripts", "certification-audit.js"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "scripts", "publication-assets.js"))).toBe(true);
     expect(fs.existsSync(path.join(root, "scripts", "reproducibility-check.js"))).toBe(true);
   });
 });
