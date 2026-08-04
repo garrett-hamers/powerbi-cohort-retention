@@ -191,6 +191,103 @@ for (const value of [
   assert(dossier.includes(value), `the submission dossier does not record ${value}`);
 }
 
+const sampleRoot = path.join(root, "samples");
+const sampleProject = "atlyn-cohort-retention-sample";
+const sampleReport = path.join(sampleRoot, `${sampleProject}.Report`);
+const sampleModel = path.join(sampleRoot, `${sampleProject}.SemanticModel`);
+for (const relativePath of [
+  `${sampleProject}.pbip`,
+  path.join(`${sampleProject}.SemanticModel`, "definition.pbism"),
+  path.join(`${sampleProject}.SemanticModel`, "model.bim"),
+  path.join(`${sampleProject}.Report`, "definition.pbir"),
+  path.join(`${sampleProject}.Report`, "definition", "version.json"),
+  path.join(`${sampleProject}.Report`, "definition", "report.json"),
+  path.join(`${sampleProject}.Report`, "definition", "pages", "pages.json"),
+  path.join(`${sampleProject}.Report`, "CustomVisuals", expectedGuid, "package.json"),
+  path.join(
+    `${sampleProject}.Report`,
+    "CustomVisuals",
+    expectedGuid,
+    "resources",
+    `${expectedGuid}.pbiviz.json`
+  )
+]) {
+  assert(fs.existsSync(path.join(sampleRoot, relativePath)), `the sample report is missing ${relativePath}`);
+}
+
+const sampleReportJson = JSON.parse(
+  fs.readFileSync(path.join(sampleReport, "definition", "report.json"), "utf8")
+);
+assert(
+  sampleReportJson.publicCustomVisuals === undefined,
+  "the sample report must embed the visual, not resolve it from the AppSource store"
+);
+const samplePackage = sampleReportJson.resourcePackages?.find((entry) => entry.type === "CustomVisual");
+assert(samplePackage?.name === expectedGuid, "the sample report does not embed this visual");
+
+const samplePages = path.join(sampleReport, "definition", "pages");
+const samplePageDirectories = fs
+  .readdirSync(samplePages, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory());
+assert(samplePageDirectories.length === 1, "the sample report must contain exactly one page");
+const sampleVisuals = path.join(samplePages, samplePageDirectories[0].name, "visuals");
+const sampleVisualDirectories = fs
+  .readdirSync(sampleVisuals, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory());
+assert(sampleVisualDirectories.length === 1, "the sample report must contain exactly one visual");
+const sampleVisual = JSON.parse(
+  fs.readFileSync(path.join(sampleVisuals, sampleVisualDirectories[0].name, "visual.json"), "utf8")
+);
+assert(sampleVisual.visual?.visualType === expectedGuid, "the sample visual does not bind this GUID");
+
+const roleNames = new Set(capabilities.dataRoles.map((role) => role.name));
+const boundRoles = Object.keys(sampleVisual.visual.query?.queryState ?? {});
+assert(boundRoles.length > 0, "the sample visual binds no data roles");
+for (const role of boundRoles) {
+  assert(roleNames.has(role), `the sample visual binds unknown data role ${role}`);
+}
+
+const sampleModelText = fs.readFileSync(path.join(sampleModel, "model.bim"), "utf8");
+for (const token of [
+  "Sql.Database",
+  "Web.Contents",
+  "File.Contents",
+  "Folder.Files",
+  "Excel.Workbook",
+  "Csv.Document",
+  "OData.Feed",
+  "Odbc.DataSource",
+  "AzureStorage.",
+  "SharePoint.",
+  "http://",
+  "https://"
+]) {
+  assert(
+    !sampleModelText.includes(token),
+    `the sample semantic model must be fully offline but references ${token}`
+  );
+}
+
+const sampleVisualBundle = JSON.parse(
+  fs.readFileSync(
+    path.join(sampleReport, "CustomVisuals", expectedGuid, "resources", `${expectedGuid}.pbiviz.json`),
+    "utf8"
+  )
+);
+assert(sampleVisualBundle.visual?.guid === expectedGuid, "the embedded visual GUID does not match source");
+assert(
+  sampleVisualBundle.visual?.version === pbiviz.visual.version,
+  "the embedded visual version is stale; re-run npm run sample:report"
+);
+assert(
+  JSON.stringify(sampleVisualBundle.capabilities) === JSON.stringify(capabilities),
+  "the embedded visual capabilities are stale; re-run npm run sample:report"
+);
+assert(
+  sampleVisualBundle.content?.js?.includes(`powerbiGlobal.visuals.plugins[${JSON.stringify(expectedGuid)}]`),
+  "the embedded visual bundle does not register its plugin"
+);
+
 const distFiles = fs.readdirSync(path.join(root, "dist")).sort();
 assert(
   JSON.stringify(distFiles) ===

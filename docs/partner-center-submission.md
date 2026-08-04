@@ -136,6 +136,103 @@ and collects no data, and links the privacy policy, terms, and support contact.
 Alternatively the offer may use Microsoft's standard contract; the committed
 `EULA.md` is supplied so the listing does not depend on that choice.
 
+## 8a. Licensing and pricing
+
+**AppSource listing: Free.**
+
+| Decision | Value |
+| --- | --- |
+| AppSource offer type | Free |
+| Transactable / paid offer | **No** — do not configure one |
+| In-app purchase | No |
+| Trial | Not applicable, the listing is free |
+
+The visual is listed on AppSource at no cost and Partner Center should be
+configured as a **free** offer. Do not enable a paid or transactable offer, and do
+not attach Microsoft commercial-marketplace billing.
+
+**AppSource licensing is separate from the Atlyn storefront subscription.**
+Monetization happens only through the Atlyn storefront at https://atlyn.io, which
+is billed by Stripe under Atlyn's own terms
+(https://atlyn.io/legal/terms). Nothing in the AppSource listing, this repository,
+or the packaged `.pbiviz` gates functionality behind that subscription, and the
+visual contains no licence check, entitlement call, or network request of any
+kind — a source gate in `npm run package` enforces that.
+
+## 8b. Sample report (offline)
+
+| Requirement | Value |
+| --- | --- |
+| Path | `samples/atlyn-cohort-retention-sample.pbip` |
+| Format | Power BI Project (PBIP), PBIR report definition |
+| Data | 82 inline `#table(...)` literal rows, 16 monthly cohorts x 12 relative periods |
+| External connections | **None** |
+| Visual delivery | Embedded via `resourcePackages`, not `publicCustomVisuals` |
+| Regenerate | `npm run build && npm run sample:report` |
+
+See `samples/README.md` for the full layout and field bindings.
+
+### Why this is a PBIP and not a `.pbix`
+
+A `.pbix` stores its model in a `DataModel` part that is a **binary Analysis
+Services backup image**, which cannot be produced headlessly. A `.pbit` would
+additionally require a UTF-16LE legacy `Report/Layout` blob, a `DataModelSchema`
+part, and a hand-built `[Content_Types].xml`, none of which this repository can
+validate — producing one would be guesswork. PBIP is plain JSON plus Power Query
+M and uses the PBIR format that offline custom-visual embedding requires.
+
+### Required one-time manual step
+
+1. Open `samples/atlyn-cohort-retention-sample.pbip` in Power BI Desktop.
+2. Confirm the visual renders and the data refreshes **with no credential prompt**.
+3. **File → Save As → Power BI report (.pbix)**.
+4. Upload that `.pbix` to Partner Center as the sample report.
+
+> **This project has not been opened in Power BI Desktop from this repository.**
+> Every automated assertion is structural, plus a functional JSDOM check of the
+> embedded bundle. Step 2 above is the real validation gate, and it is an
+> owner-controlled step.
+
+### Offline guarantee, enforced
+
+`tests/sample-report.test.ts` and `scripts/certification-audit.js` both fail the
+build if `model.bim` contains `Sql.Database`, `Web.Contents`, `File.Contents`,
+`Folder.Files`, `Excel.Workbook`, `Csv.Document`, `OData.Feed`, `Odbc.DataSource`,
+`AzureStorage.*`, `SharePoint.*`, or a bare `http://` / `https://`. They also fail
+if `publicCustomVisuals` appears in `report.json`, since that resolves the visual
+from the AppSource store at open time rather than from the embedded package.
+
+### Risk: the visual GUID is not in the toolchain's format
+
+This is unresolved and needs an owner decision.
+
+`node_modules/powerbi-visuals-tools/lib/VisualGenerator.js` line 46 generates a
+visual GUID as `name + crypto.randomUUID().replace(/-/g, "").toUpperCase()`. For
+this project that would be `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`.
+Every GUID the official tooling produces is therefore a **valid JavaScript
+identifier**.
+
+This repository's GUID is the hyphenated UUID
+`d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11`. The official plugin template
+(`node_modules/powerbi-visuals-webpack-plugin/templates/plugin-template.js` line
+17) emits `var <pluginName>: IVisualPlugin = {...}`, which is a **syntax error**
+for a hyphenated name. That is the concrete, verifiable reason this repository
+cannot use the CLI's package compiler as its package producer, as noted in
+`README.md`.
+
+**What was done:** the GUID is frozen because it is already recorded in the
+owner's storefront release manifest and artifact download paths, so the sample
+report's embedded bundle registers the plugin with bracket notation,
+`powerbi.visuals.plugins["d9f6b5a2-..."] = {...}`. That is valid JavaScript and
+semantically identical to the official template, and a JSDOM test proves the
+plugin registers and renders.
+
+**What is unverified:** whether **Power BI Desktop and Partner Center accept a
+hyphenated GUID** as a visual type. This repository cannot test that. If either
+rejects it, the only fix is a GUID change, which would also require re-publishing
+the storefront release manifest and artifact download paths. Validate this during
+the one-time Power BI Desktop step above, before submitting.
+
 ## 9. Packaged artifact
 
 **The packaged artifact hash changed in this submission preparation.** The
@@ -166,9 +263,9 @@ zlib version. Use those exact values in the release manifest, and upload the
 `.pbiviz` from that same build. Do not mix a hash from one environment with a
 binary from another.
 
-The 300 x 300 logo and the screenshots are Partner Center **listing** assets and
-are intentionally not added to the `.pbiviz` package inputs, so the package file
-list is unchanged:
+The 300 x 300 logo, the screenshots, and the entire `samples/` sample report are
+Partner Center **listing** assets and are intentionally not added to the `.pbiviz`
+package inputs, so the package file list is unchanged:
 
 ```text
 assets/icon.png
@@ -180,16 +277,20 @@ style/visual.less
 visual.js
 ```
 
+`tests/sample-report.test.ts` asserts this exact list, so adding the sample report
+cannot silently change the packaged artifact.
+
 ## 10. Automated verification
 
 | Command | What it proves |
 | --- | --- |
-| `npm test` | Packaging tests assert the PNG signature, exact icon/logo/screenshot dimensions, screenshot byte ceilings, required pbiviz fields, and that this dossier records the same values. |
+| `npm test` | Packaging tests assert the PNG signature, exact icon/logo/screenshot dimensions, screenshot byte ceilings, required pbiviz fields, and that this dossier records the same values. Sample-report tests assert the PBIP/PBIR parts, the GUID binding, that every bound role exists in `capabilities.json`, that the model has no external data source, that the packaged input list is unchanged, and — functionally, in JSDOM — that the embedded bundle registers its plugin and renders a grid. |
 | `npm run typecheck` | TypeScript source compiles cleanly. |
 | `npm run eslint` | Full ESLint gate including `eslint-plugin-powerbi-visuals`. |
 | `npm run build` | Produces `dist/visual.js`. |
-| `npm run publication:assets:enforce` | Fails the build on any submission-asset or metadata blocker. Now wired into both `npm run package` and CI. |
-| `npm run package` | Version gate, deterministic package, reproducibility check, enforced publication assets, certification audit. |
+| `npm run sample:report` | Regenerates the offline sample report from the current build. |
+| `npm run publication:assets:enforce` | Fails the build on any submission-asset or metadata blocker. Wired into both `npm run package` and CI. |
+| `npm run package` | Version gate, deterministic package, reproducibility check, enforced publication assets, certification audit (which re-checks the sample report structurally). |
 | `npm audit` | Dependency advisories. |
 
 `dist/publication-readiness.json` is regenerated by every packaging run and
@@ -200,17 +301,23 @@ records the resolved submission fields, asset hashes and dimensions, an empty
 
 These cannot be completed from this repository.
 
-1. **Author a sample `.pbix` report (required by AppSource).** It must work fully
-   offline with no external connections. A `.pbix` is a proprietary binary that
-   cannot be honestly generated here, so it is deliberately **not** fabricated.
-   Build it in Power BI Desktop from imported static data, import the packaged
-   `.pbiviz`, and place the visual on the report page.
-2. **Create or confirm the Partner Center account** and the Power BI visual offer.
-3. **Upload the packaged `.pbiviz`** from `dist/atlyn-cohort-retention.pbiviz`.
-4. **Paste the listing fields** — support URL, privacy policy URL, and EULA — into
+1. **Convert the sample report to `.pbix`.** Open
+   `samples/atlyn-cohort-retention-sample.pbip` in Power BI Desktop, confirm the
+   visual renders and the data refreshes with **no credential prompt**, then
+   **File → Save As → Power BI report (.pbix)**. The PBIP itself is generated and
+   validated here; the `.pbix` conversion cannot be done headlessly because a
+   `.pbix` model is a binary Analysis Services backup image. See
+   [section 8b](#8b-sample-report-offline).
+2. **Confirm Power BI Desktop accepts the hyphenated visual GUID** during step 1.
+   This is an open risk, see the GUID risk subsection of section 8b.
+3. **Create or confirm the Partner Center account** and the Power BI visual offer,
+   configured as a **free** offer per [section 8a](#8a-licensing-and-pricing).
+4. **Upload the packaged `.pbiviz`** from `dist/atlyn-cohort-retention.pbiviz`.
+5. **Paste the listing fields** — support URL, privacy policy URL, and EULA — into
    the offer.
-5. **Upload the logo and the three screenshots** from `assets/`.
-6. **Re-publish the release manifest and the Azure Blob artifact** with the new
+6. **Upload the logo and the three screenshots** from `assets/`, and the `.pbix`
+   from step 1.
+7. **Re-publish the release manifest and the Azure Blob artifact** with the new
    `.pbiviz` SHA-256 and byte size from [section 9](#9-packaged-artifact). This
    repository does not touch Azure or the storefront.
 
@@ -218,4 +325,5 @@ These cannot be completed from this repository.
 
 This repository has satisfied every submission requirement it controls. Nothing
 in this document asserts Microsoft certification, Partner Center approval, or
-validation in a live Power BI host; none of those has been obtained.
+validation in a live Power BI host; none of those has been obtained, and the
+sample report has not been opened in Power BI Desktop from here.

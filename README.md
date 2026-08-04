@@ -63,20 +63,24 @@ valid stable UUID and applies the equivalent source/package gates locally.
 ## Microsoft AppSource submission assets
 
 `docs/partner-center-submission.md` is the submission dossier: it records every
-required Partner Center field with its concrete final value, the asset hashes and
-dimensions, the packaged `.pbiviz` SHA-256, and the remaining owner-controlled
-steps. `EULA.md` is the end user license agreement for the listing.
+required Partner Center field with its concrete final value, the licensing
+decision, the asset hashes and dimensions, the packaged `.pbiviz` SHA-256, and the
+remaining owner-controlled steps. `EULA.md` is the end user license agreement for
+the listing. The AppSource listing is **free**; the Atlyn storefront subscription
+is separate and gates nothing in this visual.
 
 | Asset | Path | Requirement |
 | --- | --- | --- |
 | Visualization pane icon | `assets/icon.png` | PNG, exactly 20x20 |
 | Partner Center logo | `assets/partner-center-logo-300.png` | PNG, exactly 300x300 |
 | Screenshots | `assets/screenshots/*.png` | 1 to 5 PNGs, exactly 1366x768, each at most 1024 KB |
+| Sample report | `samples/atlyn-cohort-retention-sample.pbip` | Fully offline, no external connections |
 
 ```text
 npm run brand:assets   # regenerate the icon and the 300x300 logo
-npm run build          # required before capturing screenshots
+npm run build          # required before capturing screenshots or building the sample
 npm run screenshots    # capture the submission screenshots
+npm run sample:report  # regenerate the offline sample report
 ```
 
 `scripts/generate-brand-assets.js` encodes both PNGs with nothing but Node's
@@ -91,6 +95,13 @@ deterministic offline fixtures in `scripts/submission-fixtures.js`, then capture
 at exactly 1366x768. Set `CHROME_PATH` if no browser is found automatically. No
 npm dependency is added for this, and CI never needs a browser because the
 screenshots are committed artifacts that CI only validates.
+
+`scripts/generate-sample-report.js` builds the offline sample report as a Power BI
+Project (PBIP) with a PBIR report definition, inline `#table(...)` literal data,
+and the built visual embedded through `resourcePackages`. See
+[`samples/README.md`](samples/README.md), including the one-time Power BI Desktop
+"Save As .pbix" step. Both the screenshots and the sample report draw their
+numbers from `scripts/cohort-dataset.js`, so they tell the same story.
 
 `npm run publication:assets:enforce` is the enforced gate. It runs inside
 `npm run package` and as its own CI step, and fails the build on a missing or

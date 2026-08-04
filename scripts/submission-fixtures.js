@@ -2,55 +2,19 @@
  * Deterministic, fully offline Power BI matrix dataView fixtures used to render the
  * real built visual for Microsoft AppSource submission screenshots.
  *
- * Every value is a literal computed here; nothing is fetched, sampled, or randomised.
+ * The cohort numbers come from `scripts/cohort-dataset.js`, which the offline sample
+ * report also uses, so the screenshots and the sample report tell the same story.
  * The retention triangle is produced honestly through the visual's own semantics: a
  * cohort row simply omits the relative periods it has not lived through yet, so
  * `assessPeriod` resolves those intersections to `status: "future"`.
  */
 
-const COHORT_LABELS = [
-  "2024-01",
-  "2024-02",
-  "2024-03",
-  "2024-04",
-  "2024-05",
-  "2024-06",
-  "2024-07",
-  "2024-08",
-  "2024-09",
-  "2024-10",
-  "2024-11",
-  "2024-12",
-  "2025-01",
-  "2025-02",
-  "2025-03",
-  "2025-04"
-];
-
-const COHORT_SIZES = [
-  1240, 1318, 1402, 1355, 1487, 1562, 1508, 1641, 1720, 1683, 1794, 1852, 1776, 1908, 1961, 2043
-];
-
-const RETENTION_CURVE = [
-  1, 0.618, 0.508, 0.451, 0.417, 0.394, 0.377, 0.364, 0.354, 0.346, 0.34, 0.335
-];
-
-function retentionRate(cohortIndex, periodIndex) {
-  if (periodIndex === 0) return 1;
-  return Math.min(0.99, RETENTION_CURVE[periodIndex] * (1 + 0.011 * cohortIndex));
-}
-
-function retainedCount(cohortIndex, periodIndex) {
-  return Math.round(COHORT_SIZES[cohortIndex] * retentionRate(cohortIndex, periodIndex));
-}
-
-/**
- * A cohort observes periods `0..observedPeriodCount - 1`. Everything after that is
- * left unsupplied so the visual classifies it as `future` and renders the hatch.
- */
-function observedPeriodCount(cohortIndex, periodCount) {
-  return Math.max(1, periodCount - cohortIndex);
-}
+const {
+  COHORT_LABELS,
+  COHORT_SIZES,
+  observedPeriodCount,
+  retainedCount
+} = require("./cohort-dataset");
 
 function periodColumns(periodCount) {
   return Array.from({ length: periodCount }, (_unused, periodIndex) => ({

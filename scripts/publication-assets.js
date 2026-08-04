@@ -38,9 +38,10 @@ const RESERVED_TLDS = ["example", "invalid", "test", "localhost"];
 
 /** Requirements only the account owner can satisfy outside this repository. */
 const OWNER_ACTIONS = [
-  "Author and attach a sample .pbix report that works fully offline with no external connections. A .pbix is a proprietary binary that cannot be honestly generated from this repository, so it is deliberately not fabricated here.",
-  "Create or confirm the Microsoft Partner Center account and the Power BI visual offer, then upload the packaged .pbiviz.",
-  "Paste the privacy policy URL, support URL, and EULA into the Partner Center offer listing.",
+  "Open samples/atlyn-cohort-retention-sample.pbip in Power BI Desktop, confirm the visual renders and the data refreshes with no credential prompt, then File > Save As > Power BI report (.pbix) and upload that .pbix to Partner Center. The PBIP is generated and validated in this repository; the .pbix conversion cannot be done headlessly because a .pbix model is a binary Analysis Services backup image.",
+  "Confirm during that Desktop step that Power BI accepts the hyphenated visual GUID. The official tooling generates GUIDs that are valid JavaScript identifiers, and this one is not; see the GUID risk section of docs/partner-center-submission.md.",
+  "Create or confirm the Microsoft Partner Center account and the Power BI visual offer, configured as a FREE offer with no paid or transactable billing.",
+  "Paste the privacy policy URL, support URL, and EULA into the Partner Center offer listing, and upload the logo and screenshots.",
   "Re-publish the release manifest and the Azure Blob artifact, because the packaged .pbiviz hash changed when the placeholder icon was replaced with the production icon."
 ];
 

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.4.0/schema.json",
+  "resourcePackages": [
+    {
+      "name": "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11",
+      "type": "CustomVisual",
+      "items": [
+        {
+          "name": "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11.pbiviz.json",
+          "path": "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11.pbiviz.json",
+          "type": "CustomVisualMetadata"
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "useStylableVisualContainerHeader": true,
+    "defaultDrillFilterOtherVisuals": true
+  }
+}

@@ -25,6 +25,18 @@ conditions stated in the MIT License.
 Where any term of this Agreement conflicts with the MIT License, the MIT License
 governs the grant of rights in the Software.
 
+## 1a. No charge, and no dependency on any subscription
+
+The Software is listed on Microsoft AppSource **free of charge**. There is no
+paid or transactable AppSource offer, no in-app purchase, and no licence key.
+
+Atlyn separately operates a paid subscription on the Atlyn storefront at
+https://atlyn.io, billed by Stripe under Atlyn's terms of service
+(https://atlyn.io/legal/terms). **That subscription is entirely separate from this
+Agreement and from the AppSource listing.** No feature of the Software is gated
+behind it. The Software performs no licence check, no entitlement lookup, and no
+network request of any kind, as stated in section 3.
+
 ## 2. Conditions
 
 You must include the MIT License copyright notice and permission notice in all
