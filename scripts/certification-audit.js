@@ -2,6 +2,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const JSZip = require("jszip");
+const less = require("less");
 const { getSourceManifest } = require("./package-manifest");
 
 const root = path.resolve(__dirname, "..");
@@ -13,6 +14,7 @@ const metadataPath = path.join(root, "dist", "package-metadata.json");
 const publicationMetadataPath = path.join(root, "dist", "publication-readiness.json");
 const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
 const expectedGuid = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+const stylesheetSource = fs.readFileSync(path.join(root, "style", "visual.less"), "utf8");
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const ICON_SIZE = 20;
 const LOGO_SIZE = 300;
@@ -37,6 +39,41 @@ function readPngDimensions(bytes, relativePath) {
     width: bytes.readUInt32BE(16),
     height: bytes.readUInt32BE(20)
   };
+}
+
+/**
+ * The stylesheet is shipped verbatim: `scripts/package.js` copies `style/visual.less` into
+ * the package and `scripts/generate-sample-report.js` inlines it into `content.css`. Neither
+ * compiles it, because this project packages by hand rather than through
+ * powerbi-visuals-webpack-plugin, which builds `content.css` from a webpack-emitted CSS asset.
+ * Shipping the file verbatim is only correct while it is already plain CSS, so rendering it
+ * through the real LESS compiler and requiring an unchanged result pins that invariant: adding
+ * a variable, mixin, nested rule, or `//` comment fails here instead of silently shipping
+ * uncompiled LESS as the visual's stylesheet.
+ */
+async function assertPackagedStylesheet(archive) {
+  const declaredStyle = pbiviz.style;
+  assert(
+    typeof declaredStyle === "string" && declaredStyle !== "",
+    "pbiviz.json must declare a style entry"
+  );
+
+  const entry = archive.file(declaredStyle);
+  assert(entry, `the package is missing the stylesheet declared by pbiviz.json style: ${declaredStyle}`);
+
+  const packagedStyle = await entry.async("string");
+  assert(packagedStyle.trim() !== "", `${declaredStyle} is packaged but empty; the visual would render unstyled`);
+  assert(packagedStyle === stylesheetSource, `${declaredStyle} in the package does not match style/visual.less`);
+  assert(/\{[^{}]*:[^{}]*\}/.test(packagedStyle), `${declaredStyle} contains no CSS declarations`);
+
+  const compiled = await less.render(packagedStyle, { filename: declaredStyle });
+  const stripWhitespace = (css) => css.replace(/\s+/g, "");
+  assert(
+    stripWhitespace(compiled.css) === stripWhitespace(packagedStyle),
+    `${declaredStyle} is shipped verbatim but is no longer already-valid CSS. Nothing in this ` +
+      "build compiles it, so it would reach Power BI uncompiled. Add a LESS build step before " +
+      "using LESS-only syntax."
+  );
 }
 
 assert(pbiviz.visual.guid === expectedGuid, "the visual GUID changed");
@@ -331,6 +368,17 @@ assert(
   sampleVisualBundle.content?.js?.includes(`powerbiGlobal.visuals.plugins[${JSON.stringify(expectedGuid)}]`),
   "the embedded visual bundle does not register its plugin"
 );
+// Power BI injects `content.css` as the visual's stylesheet. This project packages by hand
+// instead of using powerbi-visuals-webpack-plugin, which derives the CSS from a webpack-emitted
+// asset, so nothing here would notice if the stylesheet silently stopped being carried.
+assert(
+  typeof sampleVisualBundle.content?.css === "string" && sampleVisualBundle.content.css.trim() !== "",
+  "the embedded visual bundle ships no CSS; the visual would render completely unstyled"
+);
+assert(
+  sampleVisualBundle.content.css === stylesheetSource,
+  "the embedded visual CSS is stale; re-run npm run sample:report"
+);
 
 const distFiles = fs.readdirSync(path.join(root, "dist")).sort();
 assert(
@@ -346,7 +394,7 @@ assert(
 );
 
 JSZip.loadAsync(fs.readFileSync(packagePath))
- .then((archive) => {
+ .then(async (archive) => {
    const allEntries = Object.values(archive.files);
    assert(
      allEntries.every((entry) => !entry.dir),
@@ -360,6 +408,8 @@ JSZip.loadAsync(fs.readFileSync(packagePath))
      JSON.stringify(packageFiles) === JSON.stringify(metadata.sourceFiles),
      "package file entries do not match source metadata"
    );
+
+   await assertPackagedStylesheet(archive);
    console.log("Certification audit passed.");
  })
  .catch((error) => {

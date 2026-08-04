@@ -15,6 +15,18 @@
   SHA-256 and byte size are recorded in
   [`docs/partner-center-submission.md`](docs/partner-center-submission.md) section 9 and in
   `dist/package-metadata.json` as `packageSha256`.
+- Added a stylesheet gate to `scripts/certification-audit.js`. This project packages by hand
+  rather than through `powerbi-visuals-webpack-plugin`, which builds `content.css` from a
+  webpack-emitted CSS asset; here `scripts/package.js` copies `style/visual.less` into the
+  package and `scripts/generate-sample-report.js` inlines it into `content.css`. Nothing
+  compiles it, which is correct only while the file is already plain CSS. The audit now
+  asserts the packaged stylesheet is present, non-empty, byte-identical to the source, and
+  contains real declarations; that the embedded `content.css` is non-empty and not stale;
+  and that rendering the file through the real LESS compiler leaves it unchanged, so
+  introducing a variable, mixin, nested rule, or `//` comment fails the build instead of
+  silently shipping uncompiled LESS as the visual's stylesheet. `less` is now a declared
+  devDependency — it was already in the tree via `powerbi-visuals-tools`, so the install
+  is unchanged at 804 lockfile entries.
 - Prepared the Microsoft AppSource / Partner Center submission.
 - Corrected `pbiviz.json` submission metadata: real support mailbox, `https://atlyn.io/contact`
   support URL, and listing-quality description. The visual GUID is unchanged.
