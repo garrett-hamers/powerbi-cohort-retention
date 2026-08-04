@@ -1,0 +1,12 @@
+# Normalize every text file to LF in the repository and on checkout.
+#
+# The packaged .pbiviz inputs (pbiviz.json, capabilities.json, style/visual.less,
+# stringResources/**) are byte-hashed by scripts/package-manifest.js, so a CRLF
+# checkout silently changes the packaged artifact on Windows. Pinning LF keeps the
+# package inputs, the generated sample report, and the committed screenshots
+# identical on every platform.
+* text=auto eol=lf
+
+# Submission image assets are byte-exact and must never be line-ending converted.
+*.png binary
+*.pbiviz binary

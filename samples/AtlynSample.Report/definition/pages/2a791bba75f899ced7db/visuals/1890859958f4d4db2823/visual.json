@@ -1,0 +1,153 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json",
+  "name": "1890859958f4d4db2823",
+  "position": {
+    "x": 40,
+    "y": 40,
+    "z": 0,
+    "height": 800,
+    "width": 1400,
+    "tabOrder": 0
+  },
+  "visual": {
+    "visualType": "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11",
+    "query": {
+      "queryState": {
+        "Cohort": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CohortRetention"
+                    }
+                  },
+                  "Property": "Cohort"
+                }
+              },
+              "queryRef": "CohortRetention.Cohort",
+              "nativeQueryRef": "Cohort"
+            }
+          ]
+        },
+        "Period": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "CohortRetention"
+                    }
+                  },
+                  "Property": "Period"
+                }
+              },
+              "queryRef": "CohortRetention.Period",
+              "nativeQueryRef": "Period"
+            }
+          ]
+        },
+        "Retained": {
+          "projections": [
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "CohortRetention"
+                        }
+                      },
+                      "Property": "Retained"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(CohortRetention.Retained)",
+              "nativeQueryRef": "Sum of Retained"
+            }
+          ]
+        },
+        "CohortSize": {
+          "projections": [
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "CohortRetention"
+                        }
+                      },
+                      "Property": "CohortSize"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(CohortRetention.CohortSize)",
+              "nativeQueryRef": "Sum of CohortSize"
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "matrix": [
+        {
+          "properties": {
+            "metricMode": {
+              "expr": {
+                "Literal": {
+                  "Value": "'entity-retention'"
+                }
+              }
+            },
+            "grain": {
+              "expr": {
+                "Literal": {
+                  "Value": "'monthly cohort, relative month'"
+                }
+              }
+            },
+            "showStatus": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "cellPadding": {
+              "expr": {
+                "Literal": {
+                  "Value": "10D"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Customer retention by monthly cohort'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

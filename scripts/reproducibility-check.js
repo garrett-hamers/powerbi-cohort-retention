@@ -38,4 +38,7 @@ if (first.metadata !== second.metadata) {
   throw new Error("Package reproducibility check failed: package metadata changed between runs");
 }
 
-console.log(`Package reproducibility passed: ${second.sha256}`);
+console.log(
+  `Package reproducibility passed: ${second.sha256} (${second.bytes.length} bytes, ` +
+    `${process.platform} node ${process.versions.node} zlib ${process.versions.zlib})`
+);

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atlyn Cohort Retention screenshot harness</title>
+    <link rel="stylesheet" href="/style/visual.less" />
+    <style>
+      html,
+      body {
+        background: #ffffff;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        width: 100%;
+      }
+
+      #stage {
+        box-sizing: border-box;
+        height: 100%;
+        padding: 24px;
+        width: 100%;
+      }
+
+      #host {
+        border: 1px solid #e1e5ea;
+        box-sizing: border-box;
+        height: 100%;
+        overflow: hidden;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><div id="host"></div></div>
+    <script>
+      window.powerbi = window.powerbi || {};
+    </script>
+    <script src="/dist/visual.js"></script>
+    <script>
+      (function () {
+        "use strict";
+
+        function noop() {}
+
+        function resolved() {
+          return Promise.resolve([]);
+        }
+
+        function createHost() {
+          return {
+            locale: "en-US",
+            createSelectionManager: function () {
+              return {
+                select: resolved,
+                showContextMenu: resolved,
+                toggleExpandCollapse: resolved,
+                registerOnSelectCallback: noop,
+                getSelectionIds: function () {
+                  return [];
+                }
+              };
+            },
+            createSelectionIdBuilder: function () {
+              var builder = {
+                withMatrixNode: function () {
+                  return builder;
+                },
+                createSelectionId: function () {
+                  return {
+                    getKey: function () {
+                      return "harness-selection";
+                    },
+                    equals: function () {
+                      return false;
+                    },
+                    includes: function () {
+                      return false;
+                    },
+                    hasIdentity: function () {
+                      return true;
+                    },
+                    getSelector: noop,
+                    getSelectorsByColumn: noop
+                  };
+                }
+              };
+              return builder;
+            },
+            createLocalizationManager: function () {
+              return {
+                getDisplayName: function () {
+                  return "";
+                }
+              };
+            },
+            tooltipService: {
+              enabled: function () {
+                return false;
+              },
+              show: noop,
+              move: noop,
+              hide: noop
+            },
+            eventService: {
+              renderingStarted: noop,
+              renderingFinished: noop,
+              renderingFailed: noop
+            },
+            fetchMoreData: function () {
+              return false;
+            },
+            colorPalette: {
+              isHighContrast: false,
+              getColor: function () {
+                return { value: "#118dff" };
+              },
+              foreground: { value: "#242424" },
+              background: { value: "#ffffff" },
+              foregroundSelected: { value: "#0b3d6b" }
+            }
+          };
+        }
+
+        var instance = null;
+
+        window.renderScenario = function (fixture) {
+          var element = document.getElementById("host");
+          if (instance && typeof instance.destroy === "function") instance.destroy();
+          element.replaceChildren();
+
+          instance = new window.AtlynCohortRetention.Visual({
+            element: element,
+            host: createHost()
+          });
+
+          instance.update({
+            viewport: {
+              width: element.clientWidth,
+              height: element.clientHeight
+            },
+            dataViews: [fixture.dataView]
+          });
+
+          var status = element.querySelector(".atlyn-status");
+          return {
+            id: fixture.id,
+            gridCells: element.querySelectorAll("[role='gridcell']").length,
+            futureCells: element.querySelectorAll("td.status-future").length,
+            observedZeroCells: element.querySelectorAll("td.status-observed-zero").length,
+            invalidCells: element.querySelectorAll("td.status-invalid").length,
+            bodyRows: element.querySelectorAll("tbody tr").length,
+            status: status ? status.textContent : ""
+          };
+        };
+
+        window.harnessReady = true;
+      })();
+    </script>
+  </body>
+</html>

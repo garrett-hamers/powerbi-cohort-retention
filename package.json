@@ -10,9 +10,12 @@
     "eslint": "npx eslint . --ext .js,.jsx,.ts,.tsx",
     "lint": "npm run eslint",
     "powerbi:version": "pbiviz --version",
-    "package": "npm run powerbi:version && node scripts/package.js && node scripts/reproducibility-check.js && npm run publication:assets && npm run certification:audit",
+    "package": "npm run powerbi:version && node scripts/package.js && node scripts/reproducibility-check.js && npm run publication:assets:enforce && npm run certification:audit",
     "publication:assets": "node scripts/publication-assets.js",
     "publication:assets:enforce": "node scripts/publication-assets.js --enforce",
+    "brand:assets": "node scripts/generate-brand-assets.js",
+    "screenshots": "node scripts/capture-screenshots.js",
+    "sample:report": "node scripts/generate-sample-report.js",
     "certification:audit": "node scripts/certification-audit.js",
     "audit": "npm audit"
   },
