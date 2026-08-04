@@ -59,6 +59,10 @@ source inputs, and runs the certification audit. The current Power BI CLI's
 internal package compiler is not used as the package producer because its
 generated plugin uses UUIDs as JavaScript identifiers; the repository retains the
 valid stable UUID and applies the equivalent source/package gates locally.
+The package workflow also emits `dist/publication-readiness.json`, which records
+deterministic hashes and dimensions for `assets/icon.png` plus
+`assets/partner-center-logo-300.png` (when present) and lists owner-controlled
+publication blockers.
 
 The visual has no network or external-asset dependencies, uses no privileges,
 and preserves its visual GUID in `pbiviz.json` and the generated package metadata.

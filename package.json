@@ -10,7 +10,9 @@
     "eslint": "npx eslint . --ext .js,.jsx,.ts,.tsx",
     "lint": "npm run eslint",
     "powerbi:version": "pbiviz --version",
-    "package": "npm run powerbi:version && node scripts/package.js && node scripts/reproducibility-check.js && npm run certification:audit",
+    "package": "npm run powerbi:version && node scripts/package.js && node scripts/reproducibility-check.js && npm run publication:assets && npm run certification:audit",
+    "publication:assets": "node scripts/publication-assets.js",
+    "publication:assets:enforce": "node scripts/publication-assets.js --enforce",
     "certification:audit": "node scripts/certification-audit.js",
     "audit": "npm audit"
   },
@@ -39,6 +41,7 @@
     "node": ">=20.19.0"
   },
   "overrides": {
-    "uuid": "11.1.1"
+    "uuid": "11.1.1",
+    "hono": "4.12.34"
   }
 }
