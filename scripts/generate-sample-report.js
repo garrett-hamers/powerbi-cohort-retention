@@ -47,6 +47,14 @@ function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(root, relativePath), "utf8"));
 }
 
+/**
+ * Reads text with LF line endings regardless of how git checked the file out, so the
+ * generated report is byte-identical on Windows and Linux.
+ */
+function readText(...segments) {
+  return fs.readFileSync(path.join(root, ...segments), "utf8").replace(/\r\n/g, "\n");
+}
+
 function write(relativePath, contents) {
   const target = path.join(samples, relativePath);
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -98,9 +106,7 @@ function readStringResources() {
   const directory = path.join(root, "stringResources");
   const resources = {};
   for (const locale of fs.readdirSync(directory).sort()) {
-    resources[locale] = JSON.parse(
-      fs.readFileSync(path.join(directory, locale, "resources.resjson"), "utf8")
-    );
+    resources[locale] = JSON.parse(readText("stringResources", locale, "resources.resjson"));
   }
   return resources;
 }
@@ -111,8 +117,8 @@ function readStringResources() {
  * produces the two files Power BI reads for an embedded custom visual.
  */
 function buildEmbeddedVisual(pbiviz, capabilities) {
-  const bundle = fs.readFileSync(path.join(root, "dist", "visual.js"), "utf8");
-  const css = fs.readFileSync(path.join(root, "style", "visual.less"), "utf8");
+  const bundle = readText("dist", "visual.js");
+  const css = readText("style", "visual.less");
   const icon = fs.readFileSync(path.join(root, "assets", "icon.png"));
 
   const visual = {

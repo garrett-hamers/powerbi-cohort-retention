@@ -51,19 +51,19 @@ async function normalizePackage() {
   for (const entry of entries) {
     const name = entry.name.replace(/^(\.\/)+/, "");
     if (!name) continue;
+    // Directory entries carry no content and are emitted inconsistently by zip
+    // producers: `zip -qr` writes them, `Compress-Archive` does not. Dropping them
+    // makes the artifact byte-identical across platforms without changing what a
+    // consumer reads, since every file entry already carries its full path.
+    if (entry.dir) continue;
     if (names.has(name)) throw new Error(`Duplicate package entry after normalization: ${name}`);
     names.add(name);
-    const options = {
+    normalized.file(name, await entry.async("nodebuffer"), {
       date: new Date("2000-01-01T00:00:00.000Z"),
       createFolders: false,
-      unixPermissions: entry.dir ? 0o755 : 0o644,
-      dosPermissions: entry.dir ? 0x10 : 0
-    };
-    if (entry.dir) {
-      normalized.file(name, Buffer.alloc(0), { ...options, dir: true });
-    } else {
-      normalized.file(name, await entry.async("nodebuffer"), options);
-    }
+      unixPermissions: 0o644,
+      dosPermissions: 0
+    });
   }
 
   const temporaryOutput = `${output}.${process.pid}.tmp`;

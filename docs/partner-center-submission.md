@@ -245,23 +245,41 @@ expected and deliberate.
 
 ### Reproducibility scope
 
-`npm run package` is byte-for-byte reproducible **within a given toolchain**:
-`scripts/reproducibility-check.js` packages twice in the same environment and
-fails if the two artifacts differ. It is *not* reproducible **across** Node
-versions, because the final archive is DEFLATE-compressed and the exact
-compressed bytes depend on the bundled zlib version. Observed for this commit:
+`npm run package` is byte-for-byte reproducible: `scripts/reproducibility-check.js`
+packages twice and fails if the two artifacts differ. Every packaging run prints
+the hash, byte size, platform, Node version, and zlib version, and writes the hash
+to `dist/package-metadata.json` as `packageSha256`.
+
+Cross-platform determinism was **not** true before this change. The Linux
+packaging path uses `zip -X -qr` and the Windows path uses `Compress-Archive`, and
+those two producers disagree about whether to emit explicit **directory entries**.
+`zip` writes them, `Compress-Archive` does not, and the normalizer preserved that
+difference. Five redundant directory entries at roughly 98 bytes each accounted
+for the 490-byte gap previously observed between CI (21,424 bytes) and a Windows
+build (20,934 bytes).
+
+`normalizePackage` in `scripts/package.js` now drops directory entries entirely.
+They carry no content and every file entry already stores its full path, so no
+consumer is affected. Combined with the `.gitattributes` LF pin — which stops a
+Windows checkout from silently changing the byte-hashed package inputs
+`pbiviz.json`, `capabilities.json`, `style/visual.less`, and `stringResources/**` —
+the packaged artifact should now be identical on every platform.
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| CI — `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` | 21,424 bytes |
-| Local — Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` | 20,934 bytes |
+| Windows, Node 24.11.1 | `3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` | 20,898 bytes |
+| CI, `ubuntu-latest`, Node 22 | see the `Package reproducibility passed:` line in the CI log for this commit | |
 
-**Take the authoritative value from the build you actually publish.** Every
-packaging run writes the artifact hash to `dist/package-metadata.json`
-(`packageSha256`) and prints the hash, byte size, platform, Node version, and
-zlib version. Use those exact values in the release manifest, and upload the
-`.pbiviz` from that same build. Do not mix a hash from one environment with a
-binary from another.
+**Confirm the two match before publishing.** If they do, use that value in the
+release manifest. If they ever diverge again, take the authoritative hash and byte
+size from `dist/package-metadata.json` of the build whose `.pbiviz` you actually
+upload, and never mix a hash from one environment with a binary from another.
+
+For reference, earlier values during this work were
+`e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` (20,934 bytes,
+before line-ending normalization) and
+`e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` (21,424 bytes,
+CI, before the directory-entry fix). Neither should be published.
 
 The 300 x 300 logo, the screenshots, and the entire `samples/` sample report are
 Partner Center **listing** assets and are intentionally not added to the `.pbiviz`

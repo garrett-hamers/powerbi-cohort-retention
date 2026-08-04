@@ -32,11 +32,17 @@
 
 **The packaged `.pbiviz` hash changed.** `assets/icon.png` and `pbiviz.json` are packaged
 inputs, so replacing the placeholder icon and correcting the metadata produced a new
-artifact. The release manifest and the published artifact must be re-published; take the
-hash and byte size from `dist/package-metadata.json` of the build you publish, because the
-compressed archive bytes depend on the bundled zlib version. The submission assets and the
-`samples/` sample report are listing artifacts and are deliberately not packaged inputs, so
-they do not affect the artifact.
+artifact. The release manifest and the published artifact must be re-published. The
+submission assets and the `samples/` sample report are listing artifacts and are
+deliberately not packaged inputs, so they do not affect it.
+- Added `.gitattributes` pinning the repository to LF. The packaged inputs `pbiviz.json`,
+  `capabilities.json`, `style/visual.less`, and `stringResources/**` are byte-hashed, so a
+  CRLF checkout was silently changing the packaged artifact on Windows.
+- Fixed cross-platform packaging determinism: `zip -X -qr` emits explicit zip directory
+  entries and `Compress-Archive` does not, and the normalizer preserved that difference,
+  which accounted for a 490-byte gap between Linux and Windows builds. `normalizePackage`
+  now drops directory entries, which carry no content because every file entry already
+  stores its full path.
 
 **Open risk.** The official Power BI tooling generates visual GUIDs that are valid
 JavaScript identifiers (`name` + uppercase hyphenless UUID). This project's GUID is a

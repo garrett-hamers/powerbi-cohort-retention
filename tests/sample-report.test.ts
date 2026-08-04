@@ -128,7 +128,7 @@ describe("offline PBIP sample report", () => {
     expect(definition.stringResources["en-US"]).toBeDefined();
     expect(definition.content.iconBase64.startsWith("data:image/png;base64,")).toBe(true);
     expect(definition.content.css).toBe(
-      fs.readFileSync(path.join(root, "style", "visual.less"), "utf8")
+      fs.readFileSync(path.join(root, "style", "visual.less"), "utf8").replace(/\r\n/g, "\n")
     );
     expect(definition.content.js).toContain(`powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}]`);
   });
