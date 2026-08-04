@@ -17,7 +17,9 @@
 
 **The packaged `.pbiviz` hash changed.** `assets/icon.png` and `pbiviz.json` are packaged
 inputs, so replacing the placeholder icon and correcting the metadata produced a new
-artifact. The release manifest and the published artifact must be re-published.
+artifact. The release manifest and the published artifact must be re-published; take the
+hash and byte size from `dist/package-metadata.json` of the build you publish, because the
+compressed archive bytes depend on the bundled zlib version.
 
 ## 1.0.0
 

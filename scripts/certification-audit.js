@@ -182,7 +182,6 @@ assert(
 const dossier = fs.readFileSync(path.join(root, "docs", "partner-center-submission.md"), "utf8");
 for (const value of [
   expectedGuid,
-  metadata.packageSha256,
   submission.supportUrl,
   submission.privacyPolicyUrl,
   submission.authorEmail,

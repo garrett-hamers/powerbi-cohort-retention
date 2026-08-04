@@ -138,12 +138,6 @@ Alternatively the offer may use Microsoft's standard contract; the committed
 
 ## 9. Packaged artifact
 
-| Field | Value |
-| --- | --- |
-| Path | `dist/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` |
-| Size | 20,934 bytes |
-
 **The packaged artifact hash changed in this submission preparation.** The
 previously published artifact was
 `6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` at 20,950
@@ -152,12 +146,39 @@ bytes. `assets/icon.png` and `pbiviz.json` are both packaged inputs
 correcting the submission metadata necessarily produced a new artifact. This is
 expected and deliberate.
 
+### Reproducibility scope
+
+`npm run package` is byte-for-byte reproducible **within a given toolchain**:
+`scripts/reproducibility-check.js` packages twice in the same environment and
+fails if the two artifacts differ. It is *not* reproducible **across** Node
+versions, because the final archive is DEFLATE-compressed and the exact
+compressed bytes depend on the bundled zlib version. Observed for this commit:
+
+| Environment | SHA-256 | Size |
+| --- | --- | --- |
+| CI — `ubuntu-latest`, Node 22 | `e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` | see the `Package reproducibility passed:` line in the CI log |
+| Local — Windows, Node 24 | `e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` | 20,934 bytes |
+
+**Take the authoritative value from the build you actually publish.** Every
+packaging run writes the artifact hash to `dist/package-metadata.json`
+(`packageSha256`) and prints the hash, byte size, platform, Node version, and
+zlib version. Use those exact values in the release manifest, and upload the
+`.pbiviz` from that same build. Do not mix a hash from one environment with a
+binary from another.
+
 The 300 x 300 logo and the screenshots are Partner Center **listing** assets and
 are intentionally not added to the `.pbiviz` package inputs, so the package file
-list is unchanged.
+list is unchanged:
 
-The build remains byte-for-byte reproducible: `scripts/reproducibility-check.js`
-packages twice and fails if the two artifacts differ.
+```text
+assets/icon.png
+capabilities.json
+pbiviz.json
+stringResources/en-US/resources.resjson
+stringResources/es-ES/resources.resjson
+style/visual.less
+visual.js
+```
 
 ## 10. Automated verification
 
