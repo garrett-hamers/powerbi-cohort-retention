@@ -27,6 +27,19 @@
   silently shipping uncompiled LESS as the visual's stylesheet. `less` is now a declared
   devDependency — it was already in the tree via `powerbi-visuals-tools`, so the install
   is unchanged at 804 lockfile entries.
+- Verified in a real headless-Chromium render that the stylesheet is applied and load-bearing,
+  rather than only asserting that bytes are present. With the stylesheet disabled the visual
+  falls back to `display: block`, loses the future-period hatch, stops dimming observed zeroes,
+  renders the visually hidden `<caption>` as 824x18 on-screen text, and paints 15 elements
+  outside the visual's clipped bounds; with it applied, none of that happens. Keyboard
+  `:focus-visible` outlines, `[aria-selected]` selection outlines, and the high-contrast
+  custom-property path were all confirmed live. No latent bug was found behind the stylesheet.
+- `scripts/capture-screenshots.js` now asserts at capture time that the stylesheet parsed, the
+  layout is flexed, the visually hidden caption is at most 2x2, and nothing paints outside the
+  clipped bounds, and the certification audit asserts the harness still links the stylesheet.
+  An unstyled capture previously would have passed the dimension and byte-size gates unnoticed.
+  The three committed screenshots re-capture byte-for-byte identical, confirming they already
+  represent the styled product.
 - Prepared the Microsoft AppSource / Partner Center submission.
 - Corrected `pbiviz.json` submission metadata: real support mailbox, `https://atlyn.io/contact`
   support URL, and listing-quality description. The visual GUID is unchanged.

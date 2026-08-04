@@ -379,6 +379,17 @@ assert(
   sampleVisualBundle.content.css === stylesheetSource,
   "the embedded visual CSS is stale; re-run npm run sample:report"
 );
+// The committed submission screenshots are only truthful if the harness renders with the real
+// stylesheet. Losing this link would silently produce unstyled captures that still pass the
+// dimension and byte-size gates.
+const harnessPath = path.join(root, "tools", "screenshot-harness", "index.html");
+assert(fs.existsSync(harnessPath), "the screenshot harness is missing");
+assert(
+  new RegExp(`<link[^>]+rel=["']stylesheet["'][^>]+href=["']/?${pbiviz.style}["']`).test(
+    fs.readFileSync(harnessPath, "utf8")
+  ),
+  `the screenshot harness no longer links ${pbiviz.style}; submission screenshots would be captured unstyled`
+);
 
 const distFiles = fs.readdirSync(path.join(root, "dist")).sort();
 assert(

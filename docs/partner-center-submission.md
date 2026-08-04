@@ -394,9 +394,37 @@ only while it contains no LESS-only syntax — today it is plain CSS, and render
 the real LESS compiler is a whitespace-only no-op. `scripts/certification-audit.js` now pins
 that invariant: it asserts the packaged stylesheet is present, non-empty, byte-identical to
 the source, and contains real declarations; that the embedded `content.css` is non-empty and
-not stale; and that LESS compilation leaves the file unchanged. Adding a variable, mixin,
-nested rule, or `//` comment therefore fails the build instead of silently shipping
-uncompiled LESS to Power BI.
+not stale; that the screenshot harness still links it; and that LESS compilation leaves the
+file unchanged. Adding a variable, mixin, nested rule, or `//` comment therefore fails the
+build instead of silently shipping uncompiled LESS to Power BI.
+
+### The stylesheet is exercised in real renders
+
+`tools/screenshot-harness/index.html` links `/style/visual.less` and the capture server
+serves `.less` as `text/css`, so `npm run screenshots` renders the built visual **with the
+stylesheet applied** in headless Chromium. Measured in that live render:
+
+| Property | Stylesheet on | Stylesheet off |
+| --- | --- | --- |
+| `.atlyn-cohort-visual` display | `flex` | `block` |
+| `.atlyn-cohort-visual` overflow | `hidden` | `visible` |
+| `.atlyn-status` flex-shrink | `0` | `1` |
+| Future-period hatch | `repeating-linear-gradient` | none |
+| Observed-zero colour | `rgb(102,102,102)` | `rgb(0,0,0)` |
+| Visually hidden `<caption>` | 1x1, hidden | **824x18, on-screen text** |
+| Elements outside clipped bounds | **0** | **15** |
+
+Keyboard focus resolves the `td:focus-visible` rule to `solid 2px rgb(36,36,36)` at
+`-2px` offset, selection resolves `[aria-selected="true"]` to the host's
+`--atlyn-foreground-selected`, and high contrast drives `--atlyn-foreground` /
+`--atlyn-background` through the `.is-high-contrast` rules. Arrow-key navigation across the
+full grid keeps focus inside the clipped bounds with zero overflow at every step.
+
+`scripts/capture-screenshots.js` now asserts all of this at capture time — rules parsed,
+`display: flex`, caption at most 2x2, zero elements out of bounds — so an unstyled capture
+fails instead of quietly producing a screenshot that still passes the dimension and byte-size
+gates. Re-running `npm run screenshots` reproduces the three committed PNGs byte-for-byte,
+which confirms the committed screenshots already represent the styled product.
 
 ## 10. Automated verification
 
