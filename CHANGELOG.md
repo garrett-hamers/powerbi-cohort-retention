@@ -1,7 +1,20 @@
 # Changelog
 
-## Unreleased
+## 1.0.1.0
 
+- **Bumped the visual version from `1.0.0.0` to `1.0.1.0`** (`pbiviz.json` `visual.version`,
+  `package.json` `1.0.1`). The GUID `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` is unchanged.
+- **This release supersedes the v1.0.0.0 storefront artifact.** The owner's storefront is
+  distributing a `.pbiviz` at the version-keyed Blob path
+  `cohort-retention/1.0.0.0/atlyn-cohort-retention.pbiviz`
+  (SHA-256 `6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43`, 20,950 bytes).
+  The AppSource submission work below replaced packaged inputs, so the packaged bytes no
+  longer match that artifact, and two different files must not share one version number.
+  Publish this build at `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` instead;
+  the packaged filename itself is version-independent and unchanged. The authoritative
+  SHA-256 and byte size are recorded in
+  [`docs/partner-center-submission.md`](docs/partner-center-submission.md) section 9 and in
+  `dist/package-metadata.json` as `packageSha256`.
 - Prepared the Microsoft AppSource / Partner Center submission.
 - Corrected `pbiviz.json` submission metadata: real support mailbox, `https://atlyn.io/contact`
   support URL, and listing-quality description. The visual GUID is unchanged.
