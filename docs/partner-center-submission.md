@@ -269,14 +269,25 @@ under **File > Options and settings > Options > Preview features**.
 ### Required one-time manual step
 
 1. Open `samples/AtlynSample.pbip` in Power BI Desktop.
-2. Confirm the visual renders and the data loads **with no credential prompt**.
-3. **File → Save As → Power BI report (.pbix)**.
-4. Upload that `.pbix` to Partner Center as the sample report.
+2. **Run Home → Refresh → Schema and data before saving. This step is required, not
+   optional.** A PBIP stores **no data cache** — the cache lives in
+   `.pbi/cache.abf`, which `samples/.gitignore` deliberately excludes, so a fresh
+   clone has none. Desktop therefore opens the project reporting *"Some of the
+   tables have incomplete or no data."* The single table is a DAX calculated table,
+   which the engine materialises at refresh time. **Skipping this step produces a
+   `.pbix` with empty tables**, which would fail AppSource review, because the whole
+   point of the sample report is to demonstrate the visual with data.
+3. Confirm the visual renders and the data loads **with no credential prompt**.
+   There is no data source, so no prompt should ever appear.
+4. **File → Save As → Power BI report (.pbix)**.
+5. Reopen the saved `.pbix` and confirm the cohort triangle still shows values, not
+   an empty grid. This is the check that catches a missed step 2.
+6. Upload that `.pbix` to Partner Center as the sample report.
 
 > **This project has not been opened in Power BI Desktop from this repository.**
 > Every automated assertion is structural, plus a functional JSDOM check of the
-> embedded bundle. Step 2 above is the real validation gate, and it is an
-> owner-controlled step.
+> embedded bundle. Steps 2, 3, and 5 above are the real validation gate, and they
+> are owner-controlled steps.
 
 ### Offline guarantee, enforced
 
@@ -487,11 +498,16 @@ records the resolved submission fields, asset hashes and dimensions, an empty
 These cannot be completed from this repository.
 
 1. **Convert the sample report to `.pbix`.** Open `samples/AtlynSample.pbip` in
-   Power BI Desktop, confirm the visual renders and the data loads with **no
-   credential prompt**, then **File → Save As → Power BI report (.pbix)**. The PBIP
-   is generated and validated here; the `.pbix` conversion cannot be done
-   headlessly, and `pbi-tools compile` is broken against the installed Desktop
-   version. See [section 8b](#8b-sample-report-offline).
+   Power BI Desktop, then **run Home → Refresh → Schema and data — this is
+   required**. A PBIP caches no data (the cache lives in the gitignored
+   `.pbi/cache.abf`), so Desktop opens the project reporting *"Some of the tables
+   have incomplete or no data."* Saving without refreshing first produces a `.pbix`
+   with **empty tables**, which would fail AppSource review. Then confirm the visual
+   renders with **no credential prompt**, do **File → Save As → Power BI report
+   (.pbix)**, and reopen the saved `.pbix` to confirm the cohort triangle still
+   shows values. The PBIP is generated and validated here; the `.pbix` conversion
+   cannot be done headlessly, and `pbi-tools compile` is broken against the
+   installed Desktop version. See [section 8b](#8b-sample-report-offline).
 2. **Confirm Power BI Desktop accepts the hyphenated visual GUID** during step 1.
    This is an open risk, see the GUID risk subsection of section 8b.
 3. **Create or confirm the Partner Center account** and the Power BI visual offer,

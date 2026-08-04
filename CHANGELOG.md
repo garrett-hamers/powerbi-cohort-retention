@@ -62,6 +62,17 @@
   published pattern and that every sample file's `$schema` is one of a pinned set of versions
   verified to exist upstream. A nonexistent `$schema` is otherwise completely silent: nothing
   dereferences it at build time.
+- Documented the **mandatory refresh before the `.pbix` conversion** in
+  `docs/partner-center-submission.md` and `samples/README.md`. A PBIP caches no data — the
+  cache is `.pbi/cache.abf`, which `samples/.gitignore` deliberately excludes — so Power BI
+  Desktop opens the project reporting *"Some of the tables have incomplete or no data."* The
+  single table is a DAX calculated table that the engine materialises at refresh time.
+  **Home → Refresh → Schema and data is required before File → Save As → .pbix**, otherwise
+  the `.pbix` ships with empty tables and would fail AppSource review, since the sample
+  report exists to demonstrate the visual with data. Both documents also now tell the owner
+  to reopen the saved `.pbix` and confirm the cohort triangle still shows values, which is
+  the check that catches a missed refresh. A test asserts both documents keep the step,
+  because it is owner-controlled and cannot otherwise be enforced.
 - Prepared the Microsoft AppSource / Partner Center submission.
 - Corrected `pbiviz.json` submission metadata: real support mailbox, `https://atlyn.io/contact`
   support URL, and listing-quality description. The visual GUID is unchanged.

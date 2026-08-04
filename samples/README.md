@@ -95,6 +95,46 @@ named constants in `scripts/generate-sample-report.js`
 at least 4 and that no stale `model.bim` or `report.json` is present to shadow the
 folders.
 
+### `definition/version.json` is a different contract
+
+This one is easy to get wrong, and this project got it wrong until v1.0.1.0. The
+`versionMetadata/1.0.0` schema **constrains** the value:
+
+```
+"pattern": "^[1-9][0-9]*\\.(0|[1-9][0-9]*)\\.0$"
+"format of version is major.minor.patch - major: >=1, minor: >=0, patch: always 0"
+```
+
+A two-component value such as `"4.0"` fails outright, so Power BI Desktop can reject
+the project on open. `definition/version.json` therefore declares **`"2.0.0"`** from
+its own constant, `PBIR_REPORT_DEFINITION_VERSION`. The two files above keep `"4.0"`
+because their schemas declare `version` as a free-form string.
+
+### Schema versions are pinned to versions that exist
+
+Every `$schema` here was checked against
+[`microsoft/json-schemas`](https://github.com/microsoft/json-schemas), and each file
+was validated against the fetched schema with ajv:
+
+| File | Schema |
+| --- | --- |
+| `AtlynSample.pbip` | `pbip/pbipProperties/1.0.0` |
+| `definition.pbism` | `semanticModel/definitionProperties/1.0.0` |
+| `definition.pbir` | `report/definitionProperties/2.0.0` |
+| `definition/version.json` | `report/definition/versionMetadata/1.0.0` |
+| `definition/report.json` | `report/definition/report/2.1.0` |
+| `definition/pages/pages.json` | `report/definition/pagesMetadata/1.0.0` |
+| `page.json` | `report/definition/page/2.1.0` |
+| `visual.json` | `report/definition/visualContainer/2.7.0` |
+
+`report.json` previously referenced `report/2.4.0`, which **does not exist** — the
+published versions run `1.0.0`–`1.3.0`, `2.0.0`, `2.1.0`, then `3.0.0`–`3.3.0`. It
+was also missing `themeCollection`, which that schema marks as required. A
+nonexistent `$schema` is completely silent: nothing dereferences it at build time,
+so it validates against nothing. `tests/sample-report.test.ts` and
+`scripts/certification-audit.js` now assert the version pattern, the pinned schema
+set, and the presence of a well-formed `themeCollection`.
+
 Sources:
 [report folder](https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-report),
 [semantic model folder](https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-dataset).
@@ -108,9 +148,28 @@ Sources:
 AppSource wants a `.pbix`. That conversion is a one-time manual step:
 
 1. Open `AtlynSample.pbip` in Power BI Desktop.
-2. Confirm the visual renders and the data loads **with no credential prompt**.
-3. **File → Save As → Power BI report (.pbix)**.
-4. Upload that `.pbix` to Partner Center.
+2. **Run Home → Refresh → Schema and data. This step is required.** See
+   [Refresh before saving](#refresh-before-saving) below for why.
+3. Confirm the visual renders and the data loads **with no credential prompt**.
+4. **File → Save As → Power BI report (.pbix)**.
+5. Reopen the saved `.pbix` and confirm the cohort triangle still shows values
+   rather than an empty grid.
+6. Upload that `.pbix` to Partner Center.
+
+### Refresh before saving
+
+**A PBIP caches no data.** The data cache is `.pbi/cache.abf`, which `.gitignore` in
+this folder deliberately excludes, so a fresh clone has none at all. Power BI
+Desktop therefore opens this project reporting:
+
+> Some of the tables have incomplete or no data.
+
+The single table is a DAX **calculated table**, which the engine materialises during
+refresh. Nothing is wrong with the project — it simply has not been evaluated yet.
+
+**Saving to `.pbix` without refreshing first produces a `.pbix` with empty tables.**
+That would fail AppSource review, because the sample report exists to demonstrate
+the visual *with data*. Step 5 above is the check that catches a missed refresh.
 
 Two things cannot be done from this repository:
 
@@ -125,7 +184,8 @@ Two things cannot be done from this repository:
 
 > This project has **not** been opened in Power BI Desktop from this repository.
 > Everything the automated tests assert is structural, plus a functional JSDOM
-> check of the embedded bundle. Step 2 above is the real validation gate.
+> check of the embedded bundle. Steps 2, 3, and 5 above are the real validation
+> gate.
 
 ## Field bindings
 

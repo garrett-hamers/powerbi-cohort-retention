@@ -176,6 +176,25 @@ describe("offline PBIP sample report", () => {
     );
   });
 
+  test("documents the mandatory refresh before the .pbix conversion", () => {
+    // A PBIP caches no data — the cache is the gitignored .pbi/cache.abf — so Desktop opens
+    // the project with empty tables. Saving to .pbix without refreshing first ships a .pbix
+    // with no rows, which would fail AppSource review. This step cannot be automated, so the
+    // only protection is that both documents keep telling the owner to do it.
+    const documents = [
+      fs.readFileSync(path.join(samples, "README.md"), "utf8"),
+      fs.readFileSync(path.join(root, "docs", "partner-center-submission.md"), "utf8")
+    ];
+    documents.forEach((text) => {
+      expect(text).toMatch(/Refresh\s*(?:→|>|-&gt;)\s*Schema and data/);
+      expect(text.toLowerCase()).toContain("empty tables");
+    });
+
+    // The gitignored data cache is the reason the refresh is needed at all.
+    const samplesGitignore = fs.readFileSync(path.join(samples, ".gitignore"), "utf8");
+    expect(samplesGitignore).toContain(".pbi/cache.abf");
+  });
+
   test("binds the visual by GUID to roles that exist in capabilities.json", () => {
     const container = visualJson();
     expect(container.visual.visualType).toBe(guid);
