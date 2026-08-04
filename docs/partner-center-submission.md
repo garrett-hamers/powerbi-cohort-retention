@@ -267,13 +267,17 @@ the packaged artifact should now be identical on every platform.
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.11.1 | `3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` | 20,898 bytes |
-| CI, `ubuntu-latest`, Node 22 | see the `Package reproducibility passed:` line in the CI log for this commit | |
+| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` | 20,898 bytes |
+| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` | 20,898 bytes |
 
-**Confirm the two match before publishing.** If they do, use that value in the
-release manifest. If they ever diverge again, take the authoritative hash and byte
-size from `dist/package-metadata.json` of the build whose `.pbiviz` you actually
-upload, and never mix a hash from one environment with a binary from another.
+**Confirmed identical**, so `3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3`
+at 20,898 bytes is the value to publish in the release manifest. Note that the two
+environments run different Node and zlib versions and still agree, which disproves
+the earlier assumption that zlib was the cause of the divergence.
+
+If the values ever diverge again, take the authoritative hash and byte size from
+`dist/package-metadata.json` of the build whose `.pbiviz` you actually upload, and
+never mix a hash from one environment with a binary from another.
 
 For reference, earlier values during this work were
 `e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` (20,934 bytes,

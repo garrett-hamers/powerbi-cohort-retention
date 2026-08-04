@@ -303,7 +303,12 @@ assert(
 
 JSZip.loadAsync(fs.readFileSync(packagePath))
  .then((archive) => {
-   const packageFiles = Object.values(archive.files)
+   const allEntries = Object.values(archive.files);
+   assert(
+     allEntries.every((entry) => !entry.dir),
+     "the package must contain no zip directory entries; they differ by zip producer and break cross-platform determinism"
+   );
+   const packageFiles = allEntries
      .filter((entry) => !entry.dir)
      .map((entry) => entry.name.replace(/^(\.\/)+/, ""))
      .sort();
