@@ -156,8 +156,8 @@ compressed bytes depend on the bundled zlib version. Observed for this commit:
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| CI — `ubuntu-latest`, Node 22 | `e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` | see the `Package reproducibility passed:` line in the CI log |
-| Local — Windows, Node 24 | `e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` | 20,934 bytes |
+| CI — `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` | 21,424 bytes |
+| Local — Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` | 20,934 bytes |
 
 **Take the authoritative value from the build you actually publish.** Every
 packaging run writes the artifact hash to `dist/package-metadata.json`
