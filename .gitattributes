@@ -1,0 +1,8 @@
+# Generated submission artifacts are written with LF by their generator scripts.
+# Pinning the checkout keeps `npm run sample:report` a no-op on every platform.
+samples/** text eol=lf
+scripts/*.js text eol=lf
+tools/screenshot-harness/index.html text eol=lf
+
+# Submission image assets are byte-exact and must never be line-ending converted.
+*.png binary
