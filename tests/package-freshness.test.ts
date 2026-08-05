@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const {
+  NOT_VERIFIABLE,
   STALE_CSS,
   STALE_JS,
   findStalePackagedContent,
@@ -96,12 +97,47 @@ describe("stale packaged artifact guard", () => {
     ).toEqual([]);
   });
 
-  test("treats an unreadable source as no evidence rather than as staleness", () => {
-    // A tree that was never built has no dist/visual.js. That is not a stale archive.
+  test("treats one unreadable source as no evidence rather than as staleness", () => {
+    // A tree that was never built has no dist/visual.js. That is not a stale archive, and
+    // the CSS rule still concludes, so the check is still doing its job.
     expect(
       findStalePackagedContent({ packagedCss: stylesheet, stylesheetSource: stylesheet })
     ).toEqual([]);
-    expect(findStalePackagedContent({})).toEqual([]);
+    const bundle = "var AtlynCohortRetention = {};\n";
+    expect(
+      findStalePackagedContent({ packagedJs: `${bundle}// appended`, bundleSource: bundle })
+    ).toEqual([]);
+  });
+
+  test("refuses to report freshness when NO rule could run", () => {
+    // The hole this closes: with every source unreadable the function returned [], which
+    // the caller reads as "fresh" and proceeds to measure. A check that passes because it
+    // never ran is the exact shape this guard exists to prevent — no evidence is only safe
+    // while something else still concludes.
+    const problems = findStalePackagedContent({});
+    expect(problems).toHaveLength(1);
+    expect(problems[0].kind).toBe(NOT_VERIFIABLE);
+    expect(problems[0].message).toContain("style/visual.less");
+    expect(problems[0].message).toContain("dist/visual.js");
+
+    // Packaged content present but neither source readable is the realistic form.
+    expect(
+      findStalePackagedContent({ packagedCss: stylesheet, packagedJs: "var x = 1;\n" })
+        .map((problem: { kind: string }) => problem.kind)
+    ).toEqual([NOT_VERIFIABLE]);
+  });
+
+  test("says cannot-verify rather than stale, because the fix is different", () => {
+    // Telling someone to re-package when the stylesheet is missing sends them somewhere
+    // the problem is not.
+    const message = formatStaleArtifactError(
+      "dist/atlyn-cohort-retention.pbiviz",
+      findStalePackagedContent({})
+    );
+    expect(message).toContain("cannot verify dist/atlyn-cohort-retention.pbiviz is current");
+    expect(message).toContain("no freshness rule could run");
+    expect(message).toContain("This is NOT a pass");
+    expect(message).not.toContain("is stale:");
   });
 
   test("explains the fix and denies being a defect in the visual", () => {
