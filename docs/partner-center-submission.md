@@ -436,7 +436,7 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
 | Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` | 21,831 bytes |
-| CI, `ubuntu-latest` | PENDING-CI-HASH | PENDING-CI-SIZE |
+| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` | 21,831 bytes |
 
 **Confirmed identical**, so `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b`
 at 21,831 bytes is the value to publish in the release manifest, under
