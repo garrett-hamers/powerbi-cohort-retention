@@ -337,8 +337,8 @@ the one-time Power BI Desktop step above, before submitting.
 | Visual version | `1.0.1.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` |
-| Size | 20,567 bytes |
+| SHA-256 | `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809` |
+| Size | 20,652 bytes |
 | Packaged CSS | 3,524 bytes, inline as `content.css` |
 
 The packaged filename carries no version segment — `scripts/package.js` writes a fixed
@@ -375,6 +375,29 @@ That builder is now shared. `scripts/visual-package.js` is the single source of 
 embedded copy, so the two cannot drift again. The refactor was verified byte-preserving: the
 regenerated sample report is unchanged.
 
+### Verified against the official packager
+
+The layout is not inferred from reading plugin source alone. `pbiviz package` (the CLI in
+`powerbi-visuals-tools` 7.2.1, the same version this repository pins) was run against a
+throwaway scaffold and the resulting `.pbiviz` was compared entry by entry. It is **identical
+in structure** to what this repository now produces:
+
+| Aspect | `pbiviz package` output | This repository |
+| --- | --- | --- |
+| File entries | `package.json`, `resources/<GUID>.pbiviz.json` | same |
+| Directory entries | `resources/` | same |
+| Manifest keys | `version`, `author`, `resources`, `visual`, `metadata` | same |
+| `resources[0]` | `resourceId: rId0`, `sourceType: 5`, `file: resources/<GUID>.pbiviz.json` | same |
+| `metadata` | `{ pbivizjson: { resourceId: "rId0" } }` | same |
+| Resource keys | `visual`, `author`, `apiVersion`, `style`, `stringResources`, `capabilities`, `content`, `visualEntryPoint`, `externalJS`, `assets` | same |
+| `content` keys | `js`, `css`, `iconBase64` | same |
+
+Two differences found during that comparison were closed rather than reasoned away: the
+`resources/` directory entry was missing, and the resource carried an explicit
+`"dependencies": null` that the official output omits. Both are now matched exactly, because
+this project cannot open the artifact in Power BI Desktop and matching the reference
+implementation is the strongest available substitute.
+
 ### Verified loadable
 
 `tests/packaging.test.ts` loads the built `.pbiviz`, reads `package.json`, follows the
@@ -402,11 +425,11 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` | 20,567 bytes |
-| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` | 20,567 bytes |
+| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809` | 20,652 bytes |
+| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809` | 20,652 bytes |
 
-**Confirmed identical**, so `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5`
-at 20,567 bytes is the value to publish in the release manifest, under
+**Confirmed identical**, so `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809`
+at 20,652 bytes is the value to publish in the release manifest, under
 `cohort-retention/1.0.1.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from

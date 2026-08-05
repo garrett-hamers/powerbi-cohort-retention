@@ -3,7 +3,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const JSZip = require("jszip");
-const { compareNames, getSourceManifest } = require("./package-manifest");
+const { getSourceManifest } = require("./package-manifest");
 const { buildVisualPackage, resourceEntryName } = require("./visual-package");
 
 const root = path.resolve(__dirname, "..");
@@ -20,29 +20,32 @@ function run(command, args, options = {}) {
 
 /**
  * Builds the `.pbiviz` in the format Power BI actually loads: a two-entry zip holding the
- * manifest and the resource it points at. See `scripts/visual-package.js` for why.
+ * manifest and the resource it points at, plus the `resources/` directory entry that
+ * `pbiviz package` emits. See `scripts/visual-package.js` for why.
  *
- * The archive is written deterministically — entries in sorted order, a fixed DOS timestamp,
- * fixed permissions, no directory entries, no archive comment — so two runs on any platform
- * produce byte-identical output. Directory entries in particular are emitted by `zip -qr` but
- * not by `Compress-Archive`, so including them would break cross-platform reproducibility.
+ * The archive is written deterministically — entries in a fixed order, a fixed DOS timestamp,
+ * fixed permissions, no archive comment — so two runs on any platform produce byte-identical
+ * output. Building it in memory rather than shelling out to `zip` / `Compress-Archive` removes
+ * the producer differences that previously broke cross-platform reproducibility.
  */
 async function buildPackage(descriptor, definition) {
   const guid = descriptor.visual.guid;
-  const entries = [
-    ["package.json", `${JSON.stringify(descriptor, null, 2)}\n`],
-    [resourceEntryName(guid), JSON.stringify(definition)]
-  ].sort(([left], [right]) => compareNames(left, right));
+  const resourcePath = resourceEntryName(guid);
+  const entryOptions = {
+    date: new Date("2000-01-01T00:00:00.000Z"),
+    createFolders: false,
+    unixPermissions: 0o644,
+    dosPermissions: 0
+  };
 
   const archive = new JSZip();
-  for (const [name, contents] of entries) {
-    archive.file(name, contents, {
-      date: new Date("2000-01-01T00:00:00.000Z"),
-      createFolders: false,
-      unixPermissions: 0o644,
-      dosPermissions: 0
-    });
-  }
+  archive.file("package.json", `${JSON.stringify(descriptor, null, 2)}\n`, entryOptions);
+  // `pbiviz package` emits an explicit `resources/` directory entry. It carries no content, but
+  // matching the reference layout exactly costs nothing and removes a difference this project
+  // cannot verify against Power BI Desktop. `JSZip.folder()` would stamp it with the current
+  // time, so create it directly with the same pinned date as every other entry.
+  archive.file("resources/", null, { ...entryOptions, dir: true });
+  archive.file(resourcePath, JSON.stringify(definition), entryOptions);
 
   const bytes = await archive.generateAsync({
     type: "nodebuffer",
@@ -63,7 +66,7 @@ async function buildPackage(descriptor, definition) {
     fs.rmSync(temporaryOutput, { force: true });
   }
 
-  return entries.map(([name]) => name);
+  return ["package.json", resourcePath];
 }
 
 async function main() {

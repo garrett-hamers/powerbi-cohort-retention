@@ -24,8 +24,14 @@
   the stylesheet applied. `scripts/certification-audit.js` asserts the archive holds exactly
   the two expected entries and validates the manifest fields. Rebuilding in the old flat layout
   fails all three tests and the audit.
+- Validated the new layout against the **official `pbiviz package` CLI**, by packaging a
+  throwaway scaffold with the same `powerbi-visuals-tools` version this repository pins and
+  comparing the archives entry by entry. Two remaining differences were found and closed: the
+  `resources/` directory entry was missing, and the resource carried an explicit
+  `"dependencies": null` that the official output omits. The two packages are now structurally
+  identical, and a test pins the manifest, resource, and `content` key sets against it.
 - The packaged artifact is
-  `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` at 20,567 bytes, with
+  `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809` at 20,652 bytes, with
   3,524 bytes of CSS inline as `content.css`. Every hash recorded earlier during this work
   belongs to the unloadable flat archive and must not be published. Nothing was ever
   distributed at `1.0.1.0`, so this stays within the same version bump.
