@@ -230,6 +230,87 @@ describe("the success message names what was actually compared", () => {
   });
 });
 
+describe("applicability and evaluation cannot disagree", () => {
+  type FreshnessProblem = { kind: string; message: string };
+  // The two used to test the same condition separately. Each stayed self-consistent while
+  // disagreeing with the other, and nothing caught it: tightening only the copy inside
+  // findStalePackagedContent left all 23 tests green while a run whose CSS rule was
+  // skipped still printed "(content.css, content.js)".
+  //
+  // Asserting the two conditions match textually would be circular. The property that
+  // matters is behavioural: a rule reported as applicable must be a rule that actually
+  // gets evaluated. Feeding a deliberately mismatched pair makes evaluation observable —
+  // if the rule ran, it is obliged to report.
+  const mustReport = [
+    { kind: STALE_CSS, sources: { packagedCss: "", stylesheetSource: "a{b:c}" } },
+    { kind: STALE_CSS, sources: { packagedCss: "a{b:c}", stylesheetSource: "" } },
+    { kind: STALE_JS, sources: { packagedJs: "", bundleSource: "BUNDLE" } },
+    { kind: STALE_JS, sources: { packagedJs: "OTHER", bundleSource: "BUNDLE" } }
+  ];
+
+  test.each(mustReport)(
+    "$kind is evaluated whenever it is reported applicable",
+    ({ kind, sources }) => {
+      expect(applicableFreshnessRules(sources)).toContain(kind);
+      expect(
+        findStalePackagedContent(sources).map((problem: FreshnessProblem) => problem.kind)
+      ).toContain(kind);
+    }
+  );
+
+  test("refuses exactly when no rule is applicable", () => {
+    const present = { packagedCss: "a", stylesheetSource: "a", packagedJs: "b", bundleSource: "b" };
+    for (const key of Object.keys(present) as (keyof typeof present)[]) {
+      const sources: Partial<typeof present> = { ...present };
+      delete sources[key];
+      const applicable = applicableFreshnessRules(sources);
+      const refused = findStalePackagedContent(sources).some(
+        (problem: FreshnessProblem) => problem.kind === NOT_VERIFIABLE
+      );
+      expect(refused).toBe(applicable.length === 0);
+    }
+    expect(applicableFreshnessRules({})).toEqual([]);
+    expect(
+      findStalePackagedContent({}).map((problem: FreshnessProblem) => problem.kind)
+    ).toContain(NOT_VERIFIABLE);
+  });
+
+  test("the refusal names every rule that is not applicable", () => {
+    // Failure path and success path speak the same vocabulary, from the same source.
+    const [refusal] = findStalePackagedContent({});
+    expect(refusal.message).toContain("the CSS rule (content.css against style/visual.less)");
+    expect(refusal.message).toContain("the JS rule (content.js against dist/visual.js)");
+    // Files are evidence about a rule; only a rule concludes.
+    const source = fs.readFileSync(path.join(root, "scripts", "package-freshness.js"), "utf8");
+    expect(source).not.toContain('couldNotRun.push("style/visual.less")');
+    expect(source).toContain("RULE_DESCRIPTIONS");
+  });
+
+  test("the rules-that-ran list is reporting-only, never the guard's decision", () => {
+    // The list of applicable rules must never be what makes the guard work. If it were,
+    // a caller could pass by reading it instead of the problems — the ignorable-value
+    // shape that produced the original defect, where an empty list read as "fresh".
+    //
+    // Position is the property, so position is what this measures: the guard has already
+    // thrown or not by the time either reporting helper is consulted. It fails only if a
+    // helper moves into or ahead of the decision, which is exactly the change that would
+    // make it load-bearing — not on innocuous edits elsewhere.
+    const check = fs.readFileSync(path.join(root, "scripts", "render-check.js"), "utf8");
+    const guard = check.indexOf("function assertPackagedContentIsFresh");
+    expect(guard).toBeGreaterThan(-1);
+
+    const decision = check.indexOf("if (problems.length > 0)", guard);
+    const thrown = check.indexOf("throw error;", decision);
+    expect(decision).toBeGreaterThan(guard);
+    expect(thrown).toBeGreaterThan(decision);
+
+    // The import lines carry no parenthesis, so these find call sites rather than names.
+    for (const helper of ["applicableFreshnessRules(", "describeCheckedRules("]) {
+      expect(check.indexOf(helper, guard)).toBeGreaterThan(thrown);
+    }
+  });
+});
+
 describe("the guard is wired into the render check", () => {  test("runs before anything is measured", () => {
     const check = fs.readFileSync(path.join(root, "scripts", "render-check.js"), "utf8");
     expect(check).toContain("assertPackagedContentIsFresh");
