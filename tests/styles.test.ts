@@ -19,12 +19,18 @@ const root = path.resolve(__dirname, "..");
  * and so cannot run here.
  */
 
-/** The CSS the Power BI host actually injects, not the source file. */
+/**
+ * The stylesheet exactly as the Power BI host receives it.
+ *
+ * `scripts/visual-package.js` inlines this file verbatim as the packaged `content.css`,
+ * and that byte-for-byte equivalence is separately enforced — by
+ * `scripts/certification-audit.js` against the built package and by
+ * `tests/sample-report.test.ts` against the committed sample bundle. Reading the source
+ * directly therefore tests the shipped CSS while staying independent of `dist/`, which
+ * does not exist when CI runs the tests before the build.
+ */
 function packagedCss(): string {
-  const { buildVisualPackage } = require("../scripts/visual-package");
-  const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
-  const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8"));
-  return buildVisualPackage(pbiviz, capabilities).definition.content.css;
+  return fs.readFileSync(path.join(root, "style", "visual.less"), "utf8");
 }
 
 function applyPackagedCss(): void {
