@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atlyn Cohort Retention packaged-bundle harness</title>
+    <!--
+      Both of these are served out of the built .pbiviz, not off the source tree:
+      `/packaged/visual.css` is `content.css` and `/packaged/visual.js` is `content.js`,
+      exactly the two strings Power BI injects. See scripts/packaged-visual.js.
+    -->
+    <link rel="stylesheet" href="/packaged/visual.css" />
+    <style>
+      html,
+      body {
+        background: #ffffff;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        width: 100%;
+      }
+
+      #stage {
+        box-sizing: border-box;
+        height: 100%;
+        padding: 24px;
+        width: 100%;
+      }
+
+      #host {
+        border: 1px solid #e1e5ea;
+        box-sizing: border-box;
+        height: 100%;
+        overflow: hidden;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"><div id="host"></div></div>
+    <script>
+      // The host global the bundle is compiled against (webpack `externals`), and the
+      // object the packaged plugin registration writes itself into.
+      window.powerbi = window.powerbi || {};
+    </script>
+    <script src="/packaged/visual.js"></script>
+    <script>
+      (function () {
+        "use strict";
+
+        function noop() {}
+
+        function resolved() {
+          return Promise.resolve([]);
+        }
+
+        function createHost() {
+          return {
+            locale: "en-US",
+            createSelectionManager: function () {
+              return {
+                select: resolved,
+                showContextMenu: resolved,
+                toggleExpandCollapse: resolved,
+                registerOnSelectCallback: noop,
+                getSelectionIds: function () {
+                  return [];
+                }
+              };
+            },
+            createSelectionIdBuilder: function () {
+              var builder = {
+                withMatrixNode: function () {
+                  return builder;
+                },
+                createSelectionId: function () {
+                  return {
+                    getKey: function () {
+                      return "harness-selection";
+                    },
+                    equals: function () {
+                      return false;
+                    },
+                    includes: function () {
+                      return false;
+                    },
+                    hasIdentity: function () {
+                      return true;
+                    },
+                    getSelector: noop,
+                    getSelectorsByColumn: noop
+                  };
+                }
+              };
+              return builder;
+            },
+            createLocalizationManager: function () {
+              return {
+                getDisplayName: function () {
+                  return "";
+                }
+              };
+            },
+            tooltipService: {
+              enabled: function () {
+                return false;
+              },
+              show: noop,
+              move: noop,
+              hide: noop
+            },
+            eventService: {
+              renderingStarted: noop,
+              renderingFinished: noop,
+              renderingFailed: noop
+            },
+            fetchMoreData: function () {
+              return false;
+            },
+            colorPalette: {
+              isHighContrast: false,
+              getColor: function () {
+                return { value: "#118dff" };
+              },
+              foreground: { value: "#242424" },
+              background: { value: "#ffffff" },
+              foregroundSelected: { value: "#0b3d6b" }
+            }
+          };
+        }
+
+        function plugins() {
+          var registry =
+            (window.powerbi && window.powerbi.visuals && window.powerbi.visuals.plugins) || {};
+          return Object.keys(registry).map(function (key) {
+            return registry[key];
+          });
+        }
+
+        var instance = null;
+
+        /** Sizes the container the visual is told to fill, so the matrix can be made to overflow. */
+        window.setHostSize = function (width, height) {
+          var element = document.getElementById("host");
+          element.style.width = width === null ? "" : width + "px";
+          element.style.height = height === null ? "" : height + "px";
+          return { width: element.clientWidth, height: element.clientHeight };
+        };
+
+        window.renderScenario = function (fixture) {
+          var element = document.getElementById("host");
+          if (instance && typeof instance.destroy === "function") instance.destroy();
+          element.replaceChildren();
+
+          // Instantiate through the packaged plugin registration, the way the host does,
+          // rather than reaching for the bundle's library export directly.
+          var plugin = plugins()[0];
+          if (!plugin) throw new Error("The packaged bundle registered no Power BI visual plugin.");
+          instance = plugin.create({ element: element, host: createHost() });
+
+          instance.update({
+            viewport: {
+              width: element.clientWidth,
+              height: element.clientHeight
+            },
+            dataViews: [fixture.dataView]
+          });
+
+          var status = element.querySelector(".atlyn-status");
+          return {
+            id: fixture.id,
+            plugin: plugin.name,
+            gridCells: element.querySelectorAll("[role='gridcell']").length,
+            bodyRows: element.querySelectorAll("tbody tr").length,
+            headerBands: element.querySelectorAll("thead tr").length,
+            status: status ? status.textContent : ""
+          };
+        };
+
+        window.packagedStyleRuleCount = function () {
+          var total = 0;
+          for (var index = 0; index < document.styleSheets.length; index += 1) {
+            var sheet = document.styleSheets[index];
+            if (!sheet.href || sheet.href.indexOf("/packaged/visual.css") === -1) continue;
+            try {
+              total += sheet.cssRules.length;
+            } catch (error) {
+              return -1;
+            }
+          }
+          return total;
+        };
+
+        window.packagedHarnessReady = plugins().length > 0;
+      })();
+    </script>
+  </body>
+</html>

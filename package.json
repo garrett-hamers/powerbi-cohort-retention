@@ -15,6 +15,7 @@
     "publication:assets:enforce": "node scripts/publication-assets.js --enforce",
     "brand:assets": "node scripts/generate-brand-assets.js",
     "screenshots": "node scripts/capture-screenshots.js",
+    "render:check": "node scripts/render-check.js",
     "sample:report": "node scripts/generate-sample-report.js",
     "certification:audit": "node scripts/certification-audit.js",
     "audit": "npm audit"

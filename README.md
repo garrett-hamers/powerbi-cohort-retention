@@ -51,6 +51,7 @@ npm run typecheck
 npm run lint
 npm run build
 npm run package
+npm run render:check
 npm run audit
 ```
 
@@ -62,6 +63,40 @@ sorted order with a pinned DOS timestamp, fixed permissions, and no directory
 entries, and `npm run package` gates on two consecutive runs producing identical
 bytes. The output shape is the same two-entry archive the official packager
 writes, and `scripts/certification-audit.js` asserts that.
+
+## Layout regression check
+
+`npm run render:check` is the only gate that can see layout. It requires a package,
+because it renders the packaged bytes: `scripts/packaged-visual.js` opens
+`dist/atlyn-cohort-retention.pbiviz`, follows the manifest indirection to
+`resources/<GUID>.pbiviz.json`, and serves that resource's `content.js` and
+`content.css` — the two strings Power BI itself injects — into
+`tools/packaged-harness/index.html` in headless Chromium. The visual is instantiated
+through its own packaged plugin registration, not through the bundle's library
+export, so the boot path under test is the shipped one. It refuses to fall back to
+the source tree.
+
+It exists because jsdom performs no layout, so `position: sticky`, z-index stacking,
+and containing-block resolution are all invisible to `npm test`.
+`tests/styles.test.ts` asserts the CSS *rules* behind each finding and runs
+everywhere; `npm run render:check` asserts the resulting *geometry*.
+
+**A render that does not scroll proves nothing about sticky positioning.** An
+earlier at-rest render check reported "no latent bugs" while three sticky-header
+defects were fully present, because its fixture fit the viewport
+(`scrollHeight 1114 === clientHeight 1114`), so nothing scrolled and
+`position: sticky` behaved exactly like `position: static`. Every at-rest assertion
+passed vacuously. `scripts/render-check.js` therefore asserts
+`scrollHeight > clientHeight` and `scrollWidth > clientWidth` **before** it asserts
+anything about stickiness: if a fixture ever stops overflowing, the run fails loudly
+instead of silently passing. Keep that ordering in any fixture added to it.
+
+**Screenshot coverage does not imply scroll coverage.** `npm run screenshots`
+renders each fixture at 1366x768 into a container it fits, by construction — a
+submission screenshot has to show the whole matrix. Nothing scrolls during a
+capture, so the screenshots and their `assertStylesApplied` probe cannot observe
+this class of bug at all, and a clean capture is not evidence that sticky headers
+work. `npm run render:check` is the gate that covers it.
 
 ## Microsoft AppSource submission assets
 
@@ -97,7 +132,9 @@ into `tools/screenshot-harness/index.html` against a mock Power BI host and the
 deterministic offline fixtures in `scripts/submission-fixtures.js`, then captures
 at exactly 1366x768. Set `CHROME_PATH` if no browser is found automatically. No
 npm dependency is added for this, and CI never needs a browser because the
-screenshots are committed artifacts that CI only validates.
+screenshots are committed artifacts that CI only validates. Note that these
+captures are non-scrolling by construction; see
+[Layout regression check](#layout-regression-check).
 
 `scripts/generate-sample-report.js` builds the offline sample report as a native
 Power BI Project (PBIP) with a PBIR report definition and a TMDL semantic model.

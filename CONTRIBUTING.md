@@ -25,8 +25,22 @@ npm run typecheck
 npm run eslint
 npm run build
 npm run package
+npm run render:check
 npm audit
 ```
+
+`npm run render:check` must run after `npm run package`: it renders the packaged
+`content.js` and `content.css` out of `dist/atlyn-cohort-retention.pbiviz` in headless
+Chromium and refuses to fall back to the source tree. It is the only gate that observes
+layout, because jsdom performs no layout — sticky positioning, z-index stacking, and
+containing-block resolution are invisible to `npm test`.
+
+If you add a fixture to it, make it overflow its scrollport and keep the
+`scrollHeight > clientHeight` assertion ahead of every sticky assertion. A fixture that
+fits its viewport never scrolls, `position: sticky` never engages, and the whole check
+passes vacuously — that is exactly how three live sticky-header defects survived an
+earlier render check. `npm run screenshots` cannot cover this: submission captures are
+non-scrolling by construction.
 
 Keep the metric contract explicit, preserve matrix identities and hierarchy
 metadata, and do not add runtime network access or privileges. Automated tests
