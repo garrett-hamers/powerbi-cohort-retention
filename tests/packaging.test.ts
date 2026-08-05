@@ -1,7 +1,132 @@
 import fs from "node:fs";
 import path from "node:path";
+import JSZip from "jszip";
 
 const root = path.resolve(__dirname, "..");
+
+/**
+ * A `.pbiviz` is not a zip of the source tree. `generatePbiviz()` in
+ * powerbi-visuals-webpack-plugin writes exactly two entries — the `package.json` manifest and
+ * the `resources/<guid>.pbiviz.json` it points at — and Power BI reads the visual's JavaScript
+ * and CSS from that resource's `content`. A source-tree-shaped archive has no manifest for the
+ * host to resolve, so nothing inside it is ever read.
+ *
+ * These tests only run when a package has been built; `npm run package` and CI always build one.
+ */
+describe("packaged .pbiviz is loadable by a host", () => {
+  const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
+  const guid = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+  const hasPackage = fs.existsSync(packagePath);
+  const maybe = hasPackage ? test : test.skip;
+
+  async function loadPackage(): Promise<{ manifest: any; definition: any; names: string[] }> {
+    const archive = await JSZip.loadAsync(fs.readFileSync(packagePath));
+    const names = Object.values(archive.files)
+      .filter((entry: any) => !entry.dir)
+      .map((entry: any) => entry.name)
+      .sort();
+    const manifest = JSON.parse(await archive.file("package.json")!.async("string"));
+    const declared = manifest.resources.find(
+      (entry: any) => entry.resourceId === manifest.metadata.pbivizjson.resourceId
+    );
+    const definition = JSON.parse(await archive.file(declared.file)!.async("string"));
+    return { manifest, definition, names };
+  }
+
+  maybe("contains exactly the manifest and the resource it points at", async () => {
+    const { manifest, names } = await loadPackage();
+    expect(names).toEqual(["package.json", `resources/${guid}.pbiviz.json`]);
+
+    const declared = manifest.resources.find((entry: any) => entry.resourceId === "rId0");
+    expect(manifest.metadata.pbivizjson.resourceId).toBe("rId0");
+    expect(declared.file).toBe(`resources/${guid}.pbiviz.json`);
+    expect(declared.sourceType).toBe(5);
+    expect(manifest.visual.guid).toBe(guid);
+  });
+
+  maybe("carries non-empty CSS in the resource the host reads", async () => {
+    const { definition } = await loadPackage();
+    const source = fs.readFileSync(path.join(root, "style", "visual.less"), "utf8");
+    expect(typeof definition.content.css).toBe("string");
+    expect(definition.content.css.trim()).not.toBe("");
+    expect(definition.content.css).toBe(source);
+    expect(Buffer.byteLength(definition.content.css, "utf8")).toBeGreaterThan(1000);
+  });
+
+  maybe("registers its plugin and renders a grid from the packaged bytes", async () => {
+    const { definition } = await loadPackage();
+
+    const noop = () => undefined;
+    const host = {
+      locale: "en-US",
+      createSelectionManager: () => ({
+        select: () => Promise.resolve([]),
+        showContextMenu: () => Promise.resolve({}),
+        toggleExpandCollapse: () => Promise.resolve({}),
+        registerOnSelectCallback: noop
+      }),
+      createSelectionIdBuilder: () => {
+        const builder: any = {
+          withMatrixNode: () => builder,
+          createSelectionId: () => ({ getKey: () => "packaged" })
+        };
+        return builder;
+      },
+      createLocalizationManager: () => ({ getDisplayName: () => "" }),
+      tooltipService: { enabled: () => false, show: noop, move: noop, hide: noop },
+      eventService: { renderingStarted: noop, renderingFinished: noop, renderingFailed: noop },
+      fetchMoreData: () => false,
+      colorPalette: {
+        isHighContrast: false,
+        getColor: () => ({ value: "#118dff" }),
+        foreground: { value: "#242424" },
+        background: { value: "#ffffff" },
+        foregroundSelected: { value: "#0b3d6b" }
+      }
+    };
+
+    (window as any).powerbi = {};
+    // libraryTarget is "var", so the bundle must be evaluated as a script for the appended
+    // plugin registration to see it. This mirrors how Power BI loads content.js.
+    new Function(definition.content.js)();
+
+    const plugin = (window as any).powerbi.visuals.plugins[guid];
+    expect(plugin).toBeDefined();
+    expect(plugin.apiVersion).toBe(definition.apiVersion);
+
+    // Apply the packaged CSS the way the host injects it.
+    const style = document.createElement("style");
+    style.textContent = definition.content.css;
+    document.head.appendChild(style);
+
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const instance = plugin.create({ element, host });
+
+    instance.update({
+      viewport: { width: 800, height: 600 },
+      dataViews: [
+        {
+          metadata: { objects: { matrix: { metricMode: "entity-retention" } } },
+          matrix: {
+            rows: {
+              root: {
+                children: [
+                  { value: "2024-01", identity: { key: "row" }, values: { 0: { value: 100 }, 1: { value: 60 } } }
+                ]
+              }
+            },
+            columns: { root: { children: [{ value: 0 }, { value: 1 }] } },
+            valueSources: [{ displayName: "Retained" }, { displayName: "CohortSize" }]
+          }
+        }
+      ]
+    });
+
+    expect(element.querySelectorAll("[role='gridcell']").length).toBeGreaterThan(0);
+    expect(window.getComputedStyle(element.querySelector(".atlyn-cohort-visual")!).display).toBe("flex");
+  });
+});
 
 describe("clean visual package metadata", () => {
   test("keeps the GUID stable and has no privileges", () => {
@@ -56,8 +181,10 @@ describe("clean visual package metadata", () => {
       if (role.displayNameKey) expect(resources[role.displayNameKey]).toBeDefined();
     });
     const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), "utf8");
-    expect(packageScript).toContain("stringResources");
-    expect(packageScript).toContain("utimesSync");
+    expect(packageScript).toContain("buildVisualPackage");
+    expect(packageScript).toContain('date: new Date("2000-01-01T00:00:00.000Z")');
+    const visualPackage = fs.readFileSync(path.join(root, "scripts", "visual-package.js"), "utf8");
+    expect(visualPackage).toContain("stringResources");
     const metadataPath = path.join(root, "dist", "package-metadata.json");
     if (fs.existsSync(metadataPath)) {
       const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
@@ -85,6 +212,10 @@ describe("clean visual package metadata", () => {
   test("enforces the publication asset gate in CI", () => {
     const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
     expect(workflow).toContain("npm run publication:assets:enforce");
+    // The packaged-artifact tests above skip when no .pbiviz has been built yet, which is the
+    // case during CI's first `npm test`. Without a post-package run the loadability gate would
+    // silently never execute in CI.
+    expect(workflow).toMatch(/npm run package[\s\S]*npm test -- tests\/packaging\.test\.ts/);
   });
 });
 

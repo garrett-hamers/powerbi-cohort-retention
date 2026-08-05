@@ -2,7 +2,9 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const JSZip = require("jszip");
+const less = require("less");
 const { getSourceManifest } = require("./package-manifest");
+const { resourceEntryName } = require("./visual-package");
 
 const root = path.resolve(__dirname, "..");
 const pbiviz = readJson("pbiviz.json");
@@ -13,6 +15,7 @@ const metadataPath = path.join(root, "dist", "package-metadata.json");
 const publicationMetadataPath = path.join(root, "dist", "publication-readiness.json");
 const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
 const expectedGuid = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+const stylesheetSource = fs.readFileSync(path.join(root, "style", "visual.less"), "utf8");
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const ICON_SIZE = 20;
 const LOGO_SIZE = 300;
@@ -39,6 +42,76 @@ function readPngDimensions(bytes, relativePath) {
   };
 }
 
+/**
+ * A `.pbiviz` is a two-entry zip: the `package.json` manifest and the
+ * `resources/<guid>.pbiviz.json` resource it points at. Power BI reads the visual's
+ * JavaScript and CSS from that resource's `content`, so this checks the CSS where the host
+ * actually looks for it rather than where the source tree happens to keep it.
+ *
+ * Nothing compiles the LESS — `scripts/visual-package.js` inlines the file verbatim — which is
+ * correct only while it is already plain CSS. Rendering it through the real LESS compiler and
+ * requiring an unchanged result pins that invariant: adding a variable, mixin, nested rule, or
+ * `//` comment fails here instead of silently shipping uncompiled LESS as the stylesheet.
+ */
+async function assertPackagedVisual(archive) {
+  const manifestEntry = archive.file("package.json");
+  assert(manifestEntry, "the .pbiviz is missing package.json; Power BI cannot resolve the visual");
+  const manifest = JSON.parse(await manifestEntry.async("string"));
+
+  assert(manifest.visual?.guid === expectedGuid, "the packaged manifest GUID does not match source");
+  assert(manifest.visual?.version === pbiviz.visual.version, "the packaged manifest version is stale");
+  assert(
+    manifest.metadata?.pbivizjson?.resourceId === "rId0",
+    "the packaged manifest does not point at the visual resource"
+  );
+  const declaredResource = manifest.resources?.find((entry) => entry.resourceId === "rId0");
+  assert(declaredResource, "the packaged manifest declares no rId0 resource");
+  assert(
+    declaredResource.file === resourceEntryName(expectedGuid),
+    `the manifest points at ${declaredResource.file}, not ${resourceEntryName(expectedGuid)}`
+  );
+  assert(declaredResource.sourceType === 5, "the packaged resource sourceType must be 5");
+
+  const resourceEntry = archive.file(declaredResource.file);
+  assert(resourceEntry, `the .pbiviz is missing the resource the manifest points at: ${declaredResource.file}`);
+  const definition = JSON.parse(await resourceEntry.async("string"));
+
+  assert(definition.visual?.guid === expectedGuid, "the packaged resource GUID does not match source");
+  assert(
+    JSON.stringify(definition.capabilities) === JSON.stringify(capabilities),
+    "the packaged capabilities do not match capabilities.json"
+  );
+  assert(
+    definition.content?.js?.includes(`powerbiGlobal.visuals.plugins[${JSON.stringify(expectedGuid)}]`),
+    "the packaged bundle does not register its plugin, so Power BI could not instantiate the visual"
+  );
+  assert(
+    definition.content?.iconBase64?.startsWith("data:image/png;base64,"),
+    "the packaged resource is missing the inline icon"
+  );
+  assert(
+    Array.isArray(definition.externalJS) && definition.externalJS.length === 0,
+    "the packaged resource must declare no external JavaScript"
+  );
+
+  const packagedCss = definition.content?.css;
+  assert(typeof packagedCss === "string" && packagedCss.trim() !== "",
+    "the packaged resource ships no CSS; the visual would render completely unstyled");
+  assert(packagedCss === stylesheetSource, "the packaged CSS does not match style/visual.less");
+  assert(/\{[^{}]*:[^{}]*\}/.test(packagedCss), "the packaged CSS contains no declarations");
+
+  const compiled = await less.render(packagedCss, { filename: pbiviz.style });
+  const stripWhitespace = (css) => css.replace(/\s+/g, "");
+  assert(
+    stripWhitespace(compiled.css) === stripWhitespace(packagedCss),
+    `${pbiviz.style} is inlined verbatim but is no longer already-valid CSS. Nothing in this ` +
+      "build compiles it, so it would reach Power BI uncompiled. Add a LESS build step before " +
+      "using LESS-only syntax."
+  );
+
+  return Buffer.byteLength(packagedCss, "utf8");
+}
+
 assert(pbiviz.visual.guid === expectedGuid, "the visual GUID changed");
 assert(/^\d+\.\d+\.\d+\.\d+$/.test(pbiviz.visual.version), "visual version must have four numeric parts");
 assert(pbiviz.apiVersion === "5.11.1", "the API version changed unexpectedly");
@@ -53,7 +126,14 @@ assert(
   packageJson.scripts.eslint === "npx eslint . --ext .js,.jsx,.ts,.tsx",
   "the full ESLint gate is not configured"
 );
-assert(packageScript.includes("utimesSync"), "package timestamps are not normalized");
+assert(
+  packageScript.includes("buildVisualPackage"),
+  "the package script must build the official two-file .pbiviz layout"
+);
+assert(
+  packageScript.includes('date: new Date("2000-01-01T00:00:00.000Z")'),
+  "package entry timestamps are not pinned, so the artifact would not be reproducible"
+);
 
 const mapping = capabilities.dataViewMappings?.[0]?.matrix;
 assert(mapping?.rows?.dataReductionAlgorithm?.window?.count === 500, "row reduction must be 500");
@@ -219,12 +299,59 @@ for (const relativePath of [
   assert(fs.existsSync(path.join(sampleRoot, relativePath)), `the sample report is missing ${relativePath}`);
 }
 
-// Microsoft documents definition version "1.0" as meaning the definition lives in the
-// single legacy file. The exploded definition/ folders require "4.0" or higher.
+// definition.pbir / definition.pbism: Microsoft documents definition version "1.0" as meaning
+// the definition lives in the single legacy file. The exploded definition/ folders require
+// "4.0" or higher. Both schemas declare version as a free-form string.
 const samplePbir = JSON.parse(fs.readFileSync(path.join(sampleReport, "definition.pbir"), "utf8"));
 const samplePbism = JSON.parse(fs.readFileSync(path.join(sampleModel, "definition.pbism"), "utf8"));
 assert(Number(samplePbir.version) >= 4, "definition.pbir must declare version 4.0 or higher for PBIR");
 assert(Number(samplePbism.version) >= 4, "definition.pbism must declare version 4.0 or higher for TMDL");
+
+// definition/version.json is the one PBIR file whose version IS constrained. The published
+// versionMetadata/1.0.0 schema pins it to major.minor.patch with patch always 0, so a
+// two-component value such as "4.0" is invalid and Power BI Desktop can reject the project.
+const sampleDefinitionVersion = JSON.parse(
+  fs.readFileSync(path.join(sampleReport, "definition", "version.json"), "utf8")
+);
+assert(
+  /^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$/.test(sampleDefinitionVersion.version ?? ""),
+  `definition/version.json version must be major.minor.patch with patch 0; found ${sampleDefinitionVersion.version}`
+);
+
+// A nonexistent $schema URL is silent at build time but can make Power BI Desktop reject the
+// project, so every reference is pinned to a version verified to exist in
+// https://github.com/microsoft/json-schemas and validated with ajv against the fetched schema.
+const PUBLISHED_SCHEMAS = new Set([
+  "https://developer.microsoft.com/json-schemas/fabric/pbip/pbipProperties/1.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/semanticModel/definitionProperties/1.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.1.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+  "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json"
+]);
+
+function assertPublishedSchema(relativePath) {
+  const document = JSON.parse(fs.readFileSync(path.join(sampleRoot, relativePath), "utf8"));
+  assert(
+    PUBLISHED_SCHEMAS.has(document.$schema),
+    `${relativePath} references ${document.$schema}, which is not a published schema version`
+  );
+  return document;
+}
+
+for (const relativePath of [
+  `${sampleProject}.pbip`,
+  path.join(`${sampleProject}.SemanticModel`, "definition.pbism"),
+  path.join(`${sampleProject}.Report`, "definition.pbir"),
+  path.join(`${sampleProject}.Report`, "definition", "version.json"),
+  path.join(`${sampleProject}.Report`, "definition", "report.json"),
+  path.join(`${sampleProject}.Report`, "definition", "pages", "pages.json")
+]) {
+  assertPublishedSchema(relativePath);
+}
+
 assert(
   !fs.existsSync(path.join(sampleModel, "model.bim")),
   "a leftover model.bim would override the TMDL definition folder"
@@ -331,6 +458,28 @@ assert(
   sampleVisualBundle.content?.js?.includes(`powerbiGlobal.visuals.plugins[${JSON.stringify(expectedGuid)}]`),
   "the embedded visual bundle does not register its plugin"
 );
+// Power BI injects `content.css` as the visual's stylesheet. This project packages by hand
+// instead of using powerbi-visuals-webpack-plugin, which derives the CSS from a webpack-emitted
+// asset, so nothing here would notice if the stylesheet silently stopped being carried.
+assert(
+  typeof sampleVisualBundle.content?.css === "string" && sampleVisualBundle.content.css.trim() !== "",
+  "the embedded visual bundle ships no CSS; the visual would render completely unstyled"
+);
+assert(
+  sampleVisualBundle.content.css === stylesheetSource,
+  "the embedded visual CSS is stale; re-run npm run sample:report"
+);
+// The committed submission screenshots are only truthful if the harness renders with the real
+// stylesheet. Losing this link would silently produce unstyled captures that still pass the
+// dimension and byte-size gates.
+const harnessPath = path.join(root, "tools", "screenshot-harness", "index.html");
+assert(fs.existsSync(harnessPath), "the screenshot harness is missing");
+assert(
+  new RegExp(`<link[^>]+rel=["']stylesheet["'][^>]+href=["']/?${pbiviz.style}["']`).test(
+    fs.readFileSync(harnessPath, "utf8")
+  ),
+  `the screenshot harness no longer links ${pbiviz.style}; submission screenshots would be captured unstyled`
+);
 
 const distFiles = fs.readdirSync(path.join(root, "dist")).sort();
 assert(
@@ -346,7 +495,7 @@ assert(
 );
 
 JSZip.loadAsync(fs.readFileSync(packagePath))
- .then((archive) => {
+ .then(async (archive) => {
    const allEntries = Object.values(archive.files);
    assert(
      allEntries.every((entry) => !entry.dir),
@@ -356,11 +505,19 @@ JSZip.loadAsync(fs.readFileSync(packagePath))
      .filter((entry) => !entry.dir)
      .map((entry) => entry.name.replace(/^(\.\/)+/, ""))
      .sort();
+   // A .pbiviz holds exactly the manifest and the resource it points at, NOT the source tree.
    assert(
-     JSON.stringify(packageFiles) === JSON.stringify(metadata.sourceFiles),
-     "package file entries do not match source metadata"
+     JSON.stringify(packageFiles) ===
+       JSON.stringify(["package.json", resourceEntryName(expectedGuid)].sort()),
+     `the .pbiviz must contain exactly package.json and ${resourceEntryName(expectedGuid)}; found ${packageFiles.join(", ")}`
    );
-   console.log("Certification audit passed.");
+   assert(
+     JSON.stringify(packageFiles) === JSON.stringify(metadata.packageFiles.slice().sort()),
+     "package file entries do not match package metadata"
+   );
+
+   const cssBytes = await assertPackagedVisual(archive);
+   console.log(`Certification audit passed. Packaged CSS: ${cssBytes} bytes.`);
  })
  .catch((error) => {
    console.error(error);

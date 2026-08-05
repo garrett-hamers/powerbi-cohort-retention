@@ -106,20 +106,93 @@ describe("offline PBIP sample report", () => {
   });
 
   test("declares definition versions that actually load the definition folders", () => {
-    // Microsoft documents version "1.0" as meaning the definition lives in the single
-    // legacy file (PBIR-Legacy report.json / TMSL model.bim). The exploded definition/
-    // folders require "4.0" or higher, otherwise Power BI Desktop ignores them.
+    // definition.pbir / definition.pbism: Microsoft documents version "1.0" as meaning the
+    // definition lives in the single legacy file (PBIR-Legacy report.json / TMSL model.bim).
+    // The exploded definition/ folders require "4.0" or higher. Both schemas declare version
+    // as a free-form string, so a two-component value is valid in these two files.
     const pbir = readJson(path.join(reportFolder, "definition.pbir"));
     const pbism = readJson(path.join(modelFolder, "definition.pbism"));
-    const version = readJson(path.join(reportFolder, "definition", "version.json"));
 
     expect(Number(pbir.version)).toBeGreaterThanOrEqual(4);
     expect(Number(pbism.version)).toBeGreaterThanOrEqual(4);
-    expect(Number(version.version)).toBeGreaterThanOrEqual(4);
 
     // A leftover legacy file would silently win over the folder it replaces.
     expect(fs.existsSync(path.join(modelFolder, "model.bim"))).toBe(false);
     expect(fs.existsSync(path.join(reportFolder, "report.json"))).toBe(false);
+  });
+
+  test("declares a definition/version.json version the published schema accepts", () => {
+    // versionMetadata/1.0.0 constrains this value, unlike the free-form version strings in
+    // definition.pbir and definition.pbism:
+    //   "pattern": "^[1-9][0-9]*\\.(0|[1-9][0-9]*)\\.0$"
+    //   "format of version is major.minor.patch - major: >=1, minor: >=0, patch: always 0"
+    // A two-component value such as "4.0" fails outright, so Power BI Desktop can reject the
+    // project on open.
+    const version = readJson(path.join(reportFolder, "definition", "version.json"));
+    expect(version.version).toMatch(/^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$/);
+  });
+
+  test("references only schema versions that exist in microsoft/json-schemas", () => {
+    // Every entry was verified to resolve under
+    // https://raw.githubusercontent.com/microsoft/json-schemas/main/ and each sample file was
+    // validated against the fetched schema with ajv. A nonexistent $schema is silent: nothing
+    // dereferences it at build time, but Power BI Desktop can reject the project.
+    const publishedSchemas = new Set([
+      "https://developer.microsoft.com/json-schemas/fabric/pbip/pbipProperties/1.0.0/schema.json",
+      "https://developer.microsoft.com/json-schemas/fabric/item/semanticModel/definitionProperties/1.0.0/schema.json",
+      "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+      "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
+      "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.1.0/schema.json",
+      "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/pagesMetadata/1.0.0/schema.json",
+      "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json",
+      "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.7.0/schema.json"
+    ]);
+
+    const schemaBearingDocuments = [
+      readJson(path.join(samples, `${projectName}.pbip`)),
+      readJson(path.join(modelFolder, "definition.pbism")),
+      readJson(path.join(reportFolder, "definition.pbir")),
+      readJson(path.join(reportFolder, "definition", "version.json")),
+      readJson(path.join(reportFolder, "definition", "report.json")),
+      readJson(path.join(reportFolder, "definition", "pages", "pages.json")),
+      readJson(path.join(pageDirectory(), "page.json")),
+      visualJson()
+    ];
+
+    schemaBearingDocuments.forEach((document) => {
+      expect(typeof document.$schema).toBe("string");
+      expect(publishedSchemas).toContain(document.$schema);
+    });
+  });
+
+  test("satisfies the required fields of the report definition schema", () => {
+    // report/2.1.0 requires both $schema and themeCollection, and forbids extra properties.
+    const report = readJson(path.join(reportFolder, "definition", "report.json"));
+    expect(report.themeCollection?.baseTheme).toBeDefined();
+    expect(typeof report.themeCollection.baseTheme.name).toBe("string");
+    expect(typeof report.themeCollection.baseTheme.reportVersionAtImport).toBe("string");
+    expect(["SharedResources", "RegisteredResources"]).toContain(
+      report.themeCollection.baseTheme.type
+    );
+  });
+
+  test("documents the mandatory refresh before the .pbix conversion", () => {
+    // A PBIP caches no data — the cache is the gitignored .pbi/cache.abf — so Desktop opens
+    // the project with empty tables. Saving to .pbix without refreshing first ships a .pbix
+    // with no rows, which would fail AppSource review. This step cannot be automated, so the
+    // only protection is that both documents keep telling the owner to do it.
+    const documents = [
+      fs.readFileSync(path.join(samples, "README.md"), "utf8"),
+      fs.readFileSync(path.join(root, "docs", "partner-center-submission.md"), "utf8")
+    ];
+    documents.forEach((text) => {
+      expect(text).toMatch(/Refresh\s*(?:→|>|-&gt;)\s*Schema and data/);
+      expect(text.toLowerCase()).toContain("empty tables");
+    });
+
+    // The gitignored data cache is the reason the refresh is needed at all.
+    const samplesGitignore = fs.readFileSync(path.join(samples, ".gitignore"), "utf8");
+    expect(samplesGitignore).toContain(".pbi/cache.abf");
   });
 
   test("binds the visual by GUID to roles that exist in capabilities.json", () => {

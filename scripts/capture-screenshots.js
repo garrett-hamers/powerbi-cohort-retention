@@ -182,6 +182,63 @@ function assertScreenshot(bytes, relativePath) {
   return { width, height, sizeBytes: bytes.length };
 }
 
+/**
+ * A screenshot is only a truthful listing asset if the stylesheet actually applied. Losing the
+ * harness `<link>`, or serving `.less` as anything but `text/css`, would silently produce
+ * unstyled captures that still pass the dimension and byte-size gates: the layout would fall
+ * back to `display: block`, the future-period hatch would vanish, and the visually hidden
+ * `<caption>` would render as on-screen text. Probing the live render makes that fail loudly.
+ */
+async function assertStylesApplied(client, fixtureId) {
+  const probe = await client.evaluate(`(function () {
+    var host = document.getElementById("host");
+    var rootElement = host.querySelector(".atlyn-cohort-visual");
+    var caption = host.querySelector(".atlyn-matrix caption");
+    var sheet = Array.prototype.filter.call(document.styleSheets, function (candidate) {
+      return candidate.href && candidate.href.indexOf("visual.less") !== -1;
+    })[0];
+    var ruleCount = -1;
+    try { ruleCount = sheet ? sheet.cssRules.length : 0; } catch (error) { ruleCount = -1; }
+    var hostRect = host.getBoundingClientRect();
+    var captionRect = caption ? caption.getBoundingClientRect() : null;
+    return {
+      ruleCount: ruleCount,
+      display: rootElement ? getComputedStyle(rootElement).display : "",
+      captionWidth: captionRect ? Math.round(captionRect.width) : -1,
+      captionHeight: captionRect ? Math.round(captionRect.height) : -1,
+      overflowing: Array.prototype.filter.call(host.querySelectorAll("*"), function (element) {
+        var rect = element.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return false;
+        return rect.bottom - hostRect.bottom > 1 || rect.right - hostRect.right > 1;
+      }).length
+    };
+  })()`);
+
+  if (probe.ruleCount <= 0) {
+    throw new Error(
+      `Fixture ${fixtureId} rendered without style/visual.less (${probe.ruleCount} rules parsed). ` +
+        "The capture would be an unstyled screenshot of the visual."
+    );
+  }
+  if (probe.display !== "flex") {
+    throw new Error(
+      `Fixture ${fixtureId} rendered with display: ${probe.display}; the stylesheet did not apply.`
+    );
+  }
+  if (probe.captionWidth > 2 || probe.captionHeight > 2) {
+    throw new Error(
+      `Fixture ${fixtureId} rendered the visually hidden caption at ` +
+        `${probe.captionWidth}x${probe.captionHeight}; screen-reader-only text is on screen.`
+    );
+  }
+  if (probe.overflowing > 0) {
+    throw new Error(
+      `Fixture ${fixtureId} painted ${probe.overflowing} element(s) outside the visual's clipped bounds.`
+    );
+  }
+  return probe;
+}
+
 async function main() {
   if (!fs.existsSync(bundlePath)) {
     throw new Error("dist/visual.js is missing. Run `npm run build` before capturing screenshots.");
@@ -263,6 +320,12 @@ async function main() {
       console.log(
         `Rendered ${summary.id}: ${summary.bodyRows} cohort rows, ${summary.gridCells} cells ` +
           `(${summary.futureCells} future, ${summary.observedZeroCells} observed-zero, ${summary.invalidCells} invalid)`
+      );
+
+      const styles = await assertStylesApplied(client, fixture.id);
+      console.log(
+        `  styled: ${styles.ruleCount} CSS rules applied, display ${styles.display}, ` +
+          `caption ${styles.captionWidth}x${styles.captionHeight}, ${styles.overflowing} elements out of bounds`
       );
 
       await delay(150);

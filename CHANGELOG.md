@@ -2,6 +2,34 @@
 
 ## 1.0.1.0
 
+- **Fixed the `.pbiviz` package layout, which Power BI could not have loaded.** A `.pbiviz` is
+  a two-entry zip — a `package.json` manifest plus the `resources/<GUID>.pbiviz.json` it points
+  at through `resources[].file` and `metadata.pbivizjson.resourceId` — and the host reads the
+  visual's JavaScript and CSS from that resource's `content`. This repository was instead
+  shipping a **source-tree-shaped archive** (`pbiviz.json`, `capabilities.json`,
+  `style/visual.less`, `visual.js`, `assets/icon.png`, `stringResources/**`) with no manifest
+  and no `resources/` folder, so there was nothing for the host to resolve and nothing in the
+  archive would have been read. The layout was never validated against Power BI Desktop.
+- The correct builder already existed in `scripts/generate-sample-report.js`, which emitted the
+  proper two files to embed the visual in the sample report. It is now extracted to
+  `scripts/visual-package.js` and shared with `scripts/package.js`, so the standalone package
+  and the embedded copy cannot drift. The refactor is byte-preserving: the regenerated sample
+  report is unchanged.
+- `scripts/package.js` now builds the archive in memory with sorted entries, a pinned DOS
+  timestamp, fixed permissions, and no directory entries, dropping the dependency on external
+  `zip` / `Compress-Archive` producers that previously disagreed about directory entries.
+- Added a loadability gate. `tests/packaging.test.ts` reads the built `.pbiviz`, follows the
+  manifest indirection, evaluates `content.js`, asserts the plugin registers and instantiates,
+  injects `content.css` the way the host does, and asserts the visual renders grid cells with
+  the stylesheet applied. `scripts/certification-audit.js` asserts the archive holds exactly
+  the two expected entries and validates the manifest fields. Rebuilding in the old flat layout
+  fails all three tests and the audit.
+- The packaged artifact is
+  `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` at 20,567 bytes, with
+  3,524 bytes of CSS inline as `content.css`. Every hash recorded earlier during this work
+  belongs to the unloadable flat archive and must not be published. Nothing was ever
+  distributed at `1.0.1.0`, so this stays within the same version bump.
+
 - **Bumped the visual version from `1.0.0.0` to `1.0.1.0`** (`pbiviz.json` `visual.version`,
   `package.json` `1.0.1`). The GUID `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` is unchanged.
 - **This release supersedes the v1.0.0.0 storefront artifact.** The owner's storefront is
@@ -15,6 +43,64 @@
   SHA-256 and byte size are recorded in
   [`docs/partner-center-submission.md`](docs/partner-center-submission.md) section 9 and in
   `dist/package-metadata.json` as `packageSha256`.
+- Added a stylesheet gate to `scripts/certification-audit.js`. This project packages by hand
+  rather than through `powerbi-visuals-webpack-plugin`, which builds `content.css` from a
+  webpack-emitted CSS asset; here `scripts/package.js` copies `style/visual.less` into the
+  package and `scripts/generate-sample-report.js` inlines it into `content.css`. Nothing
+  compiles it, which is correct only while the file is already plain CSS. The audit now
+  asserts the packaged stylesheet is present, non-empty, byte-identical to the source, and
+  contains real declarations; that the embedded `content.css` is non-empty and not stale;
+  and that rendering the file through the real LESS compiler leaves it unchanged, so
+  introducing a variable, mixin, nested rule, or `//` comment fails the build instead of
+  silently shipping uncompiled LESS as the visual's stylesheet. `less` is now a declared
+  devDependency — it was already in the tree via `powerbi-visuals-tools`, so the install
+  is unchanged at 804 lockfile entries.
+- Verified in a real headless-Chromium render that the stylesheet is applied and load-bearing,
+  rather than only asserting that bytes are present. With the stylesheet disabled the visual
+  falls back to `display: block`, loses the future-period hatch, stops dimming observed zeroes,
+  renders the visually hidden `<caption>` as 824x18 on-screen text, and paints 15 elements
+  outside the visual's clipped bounds; with it applied, none of that happens. Keyboard
+  `:focus-visible` outlines, `[aria-selected]` selection outlines, and the high-contrast
+  custom-property path were all confirmed live. No latent bug was found behind the stylesheet.
+- `scripts/capture-screenshots.js` now asserts at capture time that the stylesheet parsed, the
+  layout is flexed, the visually hidden caption is at most 2x2, and nothing paints outside the
+  clipped bounds, and the certification audit asserts the harness still links the stylesheet.
+  An unstyled capture previously would have passed the dimension and byte-size gates unnoticed.
+  The three committed screenshots re-capture byte-for-byte identical, confirming they already
+  represent the styled product.
+- Fixed three PBIR schema defects in the sample report, all confirmed by validating every
+  sample JSON file against Microsoft's published schemas with ajv:
+  - `definition/version.json` declared `version` `"4.0"`, which the published
+    `versionMetadata/1.0.0` schema rejects — it pins the value to
+    `^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$` ("major.minor.patch, patch always 0"), so a
+    two-component value fails outright and Power BI Desktop can reject the project on open.
+    It is now `"2.0.0"`. This is a different contract from `definition.pbir` and
+    `definition.pbism`, whose schemas declare `version` as a free-form string, so `"4.0"`
+    remains correct in those two files.
+  - `definition/report.json` referenced `report/2.4.0`, **which does not exist** — that path
+    404s in `microsoft/json-schemas`, whose published report versions stop at `2.1.0` before
+    jumping to `3.x`. It now references `report/2.1.0`, the closest published version.
+  - `definition/report.json` was missing `themeCollection`, which the report schema marks as
+    required alongside `$schema`. A base theme reference is now emitted.
+- Moved `definition.pbir` to `definitionProperties/2.0.0`, the newer published format that
+  real PBIP projects use. Both `1.0.0` and `2.0.0` exist and both accept the file, so this is
+  consistency rather than a fix.
+- Added a schema regression gate. `tests/sample-report.test.ts` and
+  `scripts/certification-audit.js` now assert that `definition/version.json` matches the
+  published pattern and that every sample file's `$schema` is one of a pinned set of versions
+  verified to exist upstream. A nonexistent `$schema` is otherwise completely silent: nothing
+  dereferences it at build time.
+- Documented the **mandatory refresh before the `.pbix` conversion** in
+  `docs/partner-center-submission.md` and `samples/README.md`. A PBIP caches no data — the
+  cache is `.pbi/cache.abf`, which `samples/.gitignore` deliberately excludes — so Power BI
+  Desktop opens the project reporting *"Some of the tables have incomplete or no data."* The
+  single table is a DAX calculated table that the engine materialises at refresh time.
+  **Home → Refresh → Schema and data is required before File → Save As → .pbix**, otherwise
+  the `.pbix` ships with empty tables and would fail AppSource review, since the sample
+  report exists to demonstrate the visual with data. Both documents also now tell the owner
+  to reopen the saved `.pbix` and confirm the cohort triangle still shows values, which is
+  the check that catches a missed refresh. A test asserts both documents keep the step,
+  because it is owner-controlled and cannot otherwise be enforced.
 - Prepared the Microsoft AppSource / Partner Center submission.
 - Corrected `pbiviz.json` submission metadata: real support mailbox, `https://atlyn.io/contact`
   support URL, and listing-quality description. The visual GUID is unchanged.

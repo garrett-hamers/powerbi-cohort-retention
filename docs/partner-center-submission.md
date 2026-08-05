@@ -223,6 +223,45 @@ values are single named constants in `scripts/generate-sample-report.js`, and te
 assert they are at least 4 and that no stale `model.bim` or `report.json` exists to
 shadow the folders.
 
+### `definition/version.json` is a different contract
+
+`definition/version.json` is **not** governed by the rule above, and this is easy to get
+wrong: the `versionMetadata/1.0.0` schema constrains its `version` to
+
+```
+"pattern": "^[1-9][0-9]*\\.(0|[1-9][0-9]*)\\.0$"
+"format of version is major.minor.patch - major: >=1, minor: >=0, patch: always 0"
+```
+
+so a two-component value such as `"4.0"` is **invalid** and Power BI Desktop can reject the
+project on open. This file declares `"2.0.0"`. `definition.pbir` and `definition.pbism` keep
+`"4.0"` because their schemas declare `version` as a free-form string.
+
+### Schema versions are pinned to versions that exist
+
+Every `$schema` in `samples/` was checked against
+[`microsoft/json-schemas`](https://github.com/microsoft/json-schemas), and each sample file
+was validated against the fetched schema with ajv. A nonexistent `$schema` URL is otherwise
+completely silent — nothing dereferences it at build time — but Power BI Desktop can reject
+the project.
+
+| File | Schema |
+| --- | --- |
+| `AtlynSample.pbip` | `pbip/pbipProperties/1.0.0` |
+| `definition.pbism` | `semanticModel/definitionProperties/1.0.0` |
+| `definition.pbir` | `report/definitionProperties/2.0.0` |
+| `definition/version.json` | `report/definition/versionMetadata/1.0.0` |
+| `definition/report.json` | `report/definition/report/2.1.0` |
+| `definition/pages/pages.json` | `report/definition/pagesMetadata/1.0.0` |
+| `page.json` | `report/definition/page/2.1.0` |
+| `visual.json` | `report/definition/visualContainer/2.7.0` |
+
+`report.json` previously referenced `report/2.4.0`, which does not exist upstream — the
+published report versions run `1.0.0`–`1.3.0`, `2.0.0`, `2.1.0`, then `3.0.0`–`3.3.0`. It was
+also missing `themeCollection`, which the schema marks as required. Both are fixed, and
+`tests/sample-report.test.ts` plus `scripts/certification-audit.js` now assert the version
+pattern and the pinned schema set so neither can regress.
+
 PBIR and TMDL are documented by Microsoft as **preview** features. Opening and
 re-saving the project requires the matching preview options in Power BI Desktop
 under **File > Options and settings > Options > Preview features**.
@@ -230,14 +269,25 @@ under **File > Options and settings > Options > Preview features**.
 ### Required one-time manual step
 
 1. Open `samples/AtlynSample.pbip` in Power BI Desktop.
-2. Confirm the visual renders and the data loads **with no credential prompt**.
-3. **File → Save As → Power BI report (.pbix)**.
-4. Upload that `.pbix` to Partner Center as the sample report.
+2. **Run Home → Refresh → Schema and data before saving. This step is required, not
+   optional.** A PBIP stores **no data cache** — the cache lives in
+   `.pbi/cache.abf`, which `samples/.gitignore` deliberately excludes, so a fresh
+   clone has none. Desktop therefore opens the project reporting *"Some of the
+   tables have incomplete or no data."* The single table is a DAX calculated table,
+   which the engine materialises at refresh time. **Skipping this step produces a
+   `.pbix` with empty tables**, which would fail AppSource review, because the whole
+   point of the sample report is to demonstrate the visual with data.
+3. Confirm the visual renders and the data loads **with no credential prompt**.
+   There is no data source, so no prompt should ever appear.
+4. **File → Save As → Power BI report (.pbix)**.
+5. Reopen the saved `.pbix` and confirm the cohort triangle still shows values, not
+   an empty grid. This is the check that catches a missed step 2.
+6. Upload that `.pbix` to Partner Center as the sample report.
 
 > **This project has not been opened in Power BI Desktop from this repository.**
 > Every automated assertion is structural, plus a functional JSDOM check of the
-> embedded bundle. Step 2 above is the real validation gate, and it is an
-> owner-controlled step.
+> embedded bundle. Steps 2, 3, and 5 above are the real validation gate, and they
+> are owner-controlled steps.
 
 ### Offline guarantee, enforced
 
@@ -287,71 +337,93 @@ the one-time Power BI Desktop step above, before submitting.
 | Visual version | `1.0.1.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` |
-| Size | 20,899 bytes |
+| SHA-256 | `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` |
+| Size | 20,567 bytes |
+| Packaged CSS | 3,524 bytes, inline as `content.css` |
 
 The packaged filename carries no version segment — `scripts/package.js` writes a fixed
 `dist/atlyn-cohort-retention.pbiviz` — so only the version-keyed storefront path changes.
 
-**Why the version was bumped to `1.0.1.0`.** The owner's storefront is already
-distributing an artifact at the version-keyed path
-`cohort-retention/1.0.0.0/atlyn-cohort-retention.pbiviz`, SHA-256
-`6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` at 20,950 bytes.
-`assets/icon.png` and `pbiviz.json` are both packaged inputs
-(`scripts/package-manifest.js`), so replacing the 1 x 1 placeholder icon and
-correcting the submission metadata necessarily produced different bytes. Two
-different files must not share one version number, so `visual.version` is now
-`1.0.1.0` and this build supersedes the published v1.0.0.0 artifact. The GUID
-`d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` is deliberately unchanged.
+### The package layout was wrong, and is fixed
+
+**A `.pbiviz` is not a zip of the source tree.** `generatePbiviz()` in
+`node_modules/powerbi-visuals-webpack-plugin/src/index.js` writes exactly two entries:
+
+```text
+package.json                  <- the manifest (templates/package-json-template.js)
+resources/<GUID>.pbiviz.json  <- the whole visual inline: content.js, content.css,
+                                 iconBase64, capabilities, stringResources
+```
+
+The manifest points at the resource through `resources[].file` plus
+`metadata.pbivizjson.resourceId`, with `sourceType: 5`. The host reads the manifest, follows
+that indirection, and takes the visual's JavaScript and CSS from `content`.
+
+Through v1.0.1.0 this repository instead shipped a **source-tree-shaped archive** —
+`pbiviz.json`, `capabilities.json`, `style/visual.less`, `visual.js`, `assets/icon.png`,
+`stringResources/**` — with no `package.json` manifest and no `resources/` folder. There was
+nothing for the host to resolve, so **nothing in the archive would have been read**, including
+the stylesheet. This was never validated against Power BI; the dossier has always recorded
+that the project has not been opened in Desktop from this repository.
+
+The inconsistency was visible inside the repository: `scripts/generate-sample-report.js`
+already emitted the correct two-file layout to embed the visual in the sample report, under a
+comment calling it "the two files Power BI reads". Only the standalone `.pbiviz` diverged.
+
+That builder is now shared. `scripts/visual-package.js` is the single source of truth, used by
+`scripts/package.js` for the `.pbiviz` and by `scripts/generate-sample-report.js` for the
+embedded copy, so the two cannot drift again. The refactor was verified byte-preserving: the
+regenerated sample report is unchanged.
+
+### Verified loadable
+
+`tests/packaging.test.ts` loads the built `.pbiviz`, reads `package.json`, follows the
+`metadata.pbivizjson.resourceId` indirection to the declared resource, evaluates
+`content.js`, asserts the plugin registers under the GUID, instantiates it through
+`plugin.create()`, injects `content.css` the way the host does, and asserts the visual renders
+grid cells with the stylesheet applied (`display: flex`). Rebuilding the archive in the old
+flat layout fails all three of those tests and the certification audit.
+
+This is the strongest available check short of Power BI Desktop itself: the artifact is proven
+to load and render **from its own bytes**, through the same manifest indirection the host uses.
 
 ### Reproducibility scope
 
 `npm run package` is byte-for-byte reproducible: `scripts/reproducibility-check.js`
-packages twice and fails if the two artifacts differ. Every packaging run prints
-the hash, byte size, platform, Node version, and zlib version, and writes the hash
-to `dist/package-metadata.json` as `packageSha256`.
+packages twice and fails if the two artifacts differ. Every packaging run prints the hash,
+byte size, platform, Node version, and zlib version, and writes the hash to
+`dist/package-metadata.json` as `packageSha256`.
 
-Cross-platform determinism was **not** true before the v1.0.1.0 preparation. The
-Linux packaging path uses `zip -X -qr` and the Windows path uses `Compress-Archive`,
-and those two producers disagree about whether to emit explicit **directory
-entries**. `zip` writes them, `Compress-Archive` does not, and the normalizer
-preserved that difference. Five redundant directory entries at roughly 98 bytes each
-accounted for the 490-byte gap previously observed between CI (21,424 bytes) and a
-Windows build (20,934 bytes).
-
-`normalizePackage` in `scripts/package.js` now drops directory entries entirely.
-They carry no content and every file entry already stores its full path, so no
-consumer is affected. Combined with the `.gitattributes` LF pin — which stops a
-Windows checkout from silently changing the byte-hashed package inputs
-`pbiviz.json`, `capabilities.json`, `style/visual.less`, and `stringResources/**` —
-the packaged artifact is identical on every platform.
+The archive is now built directly in memory with sorted entries, a fixed DOS timestamp, fixed
+permissions, no directory entries, and no archive comment. That removes the previous
+dependency on external `zip` / `Compress-Archive` producers, which disagreed about emitting
+directory entries and once accounted for a 490-byte gap between Linux and Windows builds.
+Combined with the `.gitattributes` LF pin, the artifact is identical on every platform.
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` | 20,899 bytes |
-| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` | 20,899 bytes |
+| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` | 20,567 bytes |
+| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` | 20,567 bytes |
 
-**Confirmed identical**, so `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8`
-at 20,899 bytes is the value to publish in the release manifest, under the
-`cohort-retention/1.0.1.0/` path. The two environments run different Node and zlib
-versions and still agree, which disproves the earlier assumption that zlib was the
-cause of the divergence.
+**Confirmed identical**, so `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5`
+at 20,567 bytes is the value to publish in the release manifest, under
+`cohort-retention/1.0.1.0/`.
 
-If the values ever diverge again, take the authoritative hash and byte size from
-`dist/package-metadata.json` of the build whose `.pbiviz` you actually upload, and
-never mix a hash from one environment with a binary from another.
+If the values ever diverge, take the authoritative hash and byte size from
+`dist/package-metadata.json` of the build whose `.pbiviz` you actually upload, and never mix a
+hash from one environment with a binary from another.
 
-For reference, earlier values that must **not** be published are
-`3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` (20,898 bytes,
-the v1.0.0.0 build after the icon replacement, superseded by this version bump),
-`e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` (20,934 bytes,
-before line-ending normalization) and
-`e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` (21,424 bytes,
-CI, before the directory-entry fix).
+**Do not publish any earlier hash.** Every one of them belongs to the unloadable flat-layout
+archive: `6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` (20,950 bytes, the
+artifact currently on the storefront at `cohort-retention/1.0.0.0/`),
+`9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` (20,899 bytes),
+`3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` (20,898 bytes),
+`e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` (20,934 bytes), and
+`e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` (21,424 bytes).
 
 The 300 x 300 logo, the screenshots, and the entire `samples/` sample report are
-Partner Center **listing** assets and are intentionally not added to the `.pbiviz`
-package inputs, so the package file list is unchanged:
+Partner Center **listing** assets and are intentionally not packaged inputs. The packaged
+inputs — the files whose bytes feed the two archive entries — are unchanged:
 
 ```text
 assets/icon.png
@@ -363,8 +435,66 @@ style/visual.less
 visual.js
 ```
 
-`tests/sample-report.test.ts` asserts this exact list, so adding the sample report
+`tests/sample-report.test.ts` asserts this exact input list, so adding the sample report
 cannot silently change the packaged artifact.
+
+## 9a. Stylesheet packaging
+
+The visual's stylesheet **is** carried by both artifacts, verified from inside the
+built package:
+
+| Artifact | Where the CSS lives | Bytes |
+| --- | --- | --- |
+| `dist/atlyn-cohort-retention.pbiviz` | `content.css` in `resources/<GUID>.pbiviz.json` | 3,524 |
+| `samples/…/CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json` | `content.css` | 3,524 |
+
+Both are byte-identical to `style/visual.less`, and `content.css` is the field Power BI
+injects as the visual's stylesheet. Both are produced by the same
+`scripts/visual-package.js` builder.
+
+This project packages by hand rather than through `powerbi-visuals-webpack-plugin`. That
+plugin derives `content.css` from a **webpack-emitted CSS asset**, which is why a
+`pbiviz new` scaffold imports the stylesheet from `src/visual.ts` and configures a
+less-loader chain. Here `scripts/visual-package.js` reads `style/visual.less` from disk and
+inlines it into `content.css` directly, so no webpack import and no loader chain is needed to
+get the CSS into the package — the byte counts above are read back out of the built artifacts.
+
+**The standing hazard is that nothing compiles it.** Shipping the file verbatim is correct
+only while it contains no LESS-only syntax — today it is plain CSS, and rendering it through
+the real LESS compiler is a whitespace-only no-op. `scripts/certification-audit.js` now pins
+that invariant: it asserts the packaged `content.css` is present, non-empty, byte-identical to
+the source, and contains real declarations; that the embedded `content.css` is non-empty and
+not stale; that the screenshot harness still links it; and that LESS compilation leaves the
+file unchanged. Adding a variable, mixin, nested rule, or `//` comment therefore fails the
+build instead of silently shipping uncompiled LESS to Power BI.
+
+### The stylesheet is exercised in real renders
+
+`tools/screenshot-harness/index.html` links `/style/visual.less` and the capture server
+serves `.less` as `text/css`, so `npm run screenshots` renders the built visual **with the
+stylesheet applied** in headless Chromium. Measured in that live render:
+
+| Property | Stylesheet on | Stylesheet off |
+| --- | --- | --- |
+| `.atlyn-cohort-visual` display | `flex` | `block` |
+| `.atlyn-cohort-visual` overflow | `hidden` | `visible` |
+| `.atlyn-status` flex-shrink | `0` | `1` |
+| Future-period hatch | `repeating-linear-gradient` | none |
+| Observed-zero colour | `rgb(102,102,102)` | `rgb(0,0,0)` |
+| Visually hidden `<caption>` | 1x1, hidden | **824x18, on-screen text** |
+| Elements outside clipped bounds | **0** | **15** |
+
+Keyboard focus resolves the `td:focus-visible` rule to `solid 2px rgb(36,36,36)` at
+`-2px` offset, selection resolves `[aria-selected="true"]` to the host's
+`--atlyn-foreground-selected`, and high contrast drives `--atlyn-foreground` /
+`--atlyn-background` through the `.is-high-contrast` rules. Arrow-key navigation across the
+full grid keeps focus inside the clipped bounds with zero overflow at every step.
+
+`scripts/capture-screenshots.js` now asserts all of this at capture time — rules parsed,
+`display: flex`, caption at most 2x2, zero elements out of bounds — so an unstyled capture
+fails instead of quietly producing a screenshot that still passes the dimension and byte-size
+gates. Re-running `npm run screenshots` reproduces the three committed PNGs byte-for-byte,
+which confirms the committed screenshots already represent the styled product.
 
 ## 10. Automated verification
 
@@ -376,7 +506,7 @@ cannot silently change the packaged artifact.
 | `npm run build` | Produces `dist/visual.js`. |
 | `npm run sample:report` | Regenerates the offline sample report from the current build. |
 | `npm run publication:assets:enforce` | Fails the build on any submission-asset or metadata blocker. Wired into both `npm run package` and CI. |
-| `npm run package` | Version gate, deterministic package, reproducibility check, enforced publication assets, certification audit (which re-checks the sample report structurally). |
+| `npm run package` | Version gate, deterministic package, reproducibility check, enforced publication assets, certification audit (which re-checks the sample report structurally and gates the packaged stylesheet — see [section 9a](#9a-stylesheet-packaging)). |
 | `npm audit` | Dependency advisories. |
 
 `dist/publication-readiness.json` is regenerated by every packaging run and
@@ -388,11 +518,16 @@ records the resolved submission fields, asset hashes and dimensions, an empty
 These cannot be completed from this repository.
 
 1. **Convert the sample report to `.pbix`.** Open `samples/AtlynSample.pbip` in
-   Power BI Desktop, confirm the visual renders and the data loads with **no
-   credential prompt**, then **File → Save As → Power BI report (.pbix)**. The PBIP
-   is generated and validated here; the `.pbix` conversion cannot be done
-   headlessly, and `pbi-tools compile` is broken against the installed Desktop
-   version. See [section 8b](#8b-sample-report-offline).
+   Power BI Desktop, then **run Home → Refresh → Schema and data — this is
+   required**. A PBIP caches no data (the cache lives in the gitignored
+   `.pbi/cache.abf`), so Desktop opens the project reporting *"Some of the tables
+   have incomplete or no data."* Saving without refreshing first produces a `.pbix`
+   with **empty tables**, which would fail AppSource review. Then confirm the visual
+   renders with **no credential prompt**, do **File → Save As → Power BI report
+   (.pbix)**, and reopen the saved `.pbix` to confirm the cohort triangle still
+   shows values. The PBIP is generated and validated here; the `.pbix` conversion
+   cannot be done headlessly, and `pbi-tools compile` is broken against the
+   installed Desktop version. See [section 8b](#8b-sample-report-offline).
 2. **Confirm Power BI Desktop accepts the hyphenated visual GUID** during step 1.
    This is an open risk, see the GUID risk subsection of section 8b.
 3. **Create or confirm the Partner Center account** and the Power BI visual offer,

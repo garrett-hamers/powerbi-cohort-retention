@@ -34,6 +34,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { triangleRecords } = require("./cohort-dataset");
+const { buildVisualPackage, readText } = require("./visual-package");
 
 const root = path.resolve(__dirname, "..");
 const samples = path.join(root, "samples");
@@ -45,20 +46,30 @@ const COHORT_COUNT = 16;
 const PERIOD_COUNT = 12;
 
 /**
- * Both of these MUST be "4.0" or higher for the exploded `definition/` folders to be
- * loaded at all. Microsoft documents that version "1.0" means the definition is stored
- * in the single legacy file instead:
+ * `definition.pbir` and `definition.pbism` MUST be "4.0" or higher for the exploded
+ * `definition/` folders to be loaded at all. Microsoft documents that version "1.0" means
+ * the definition is stored in the single legacy file instead:
  *
  *   definition.pbir  — 1.0: report definition must be PBIR-Legacy in report.json.
  *                      4.0+: PBIR-Legacy or PBIR (\definition folder).
  *   definition.pbism — 1.0: semantic model definition must be TMSL in model.bim.
  *                      4.0+: TMSL or TMDL (\definition folder).
  *
+ * Both schemas declare `version` as a free-form string, so "4.0" is valid there.
+ *
  * https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-report
  * https://learn.microsoft.com/en-us/power-bi/developer/projects/projects-dataset
  */
 const PBIR_DEFINITION_VERSION = "4.0";
 const PBISM_DEFINITION_VERSION = "4.0";
+
+/**
+ * `definition/version.json` is a DIFFERENT file with a different contract, and it is the one
+ * place where "4.0" is invalid. versionMetadata/1.0.0 constrains the value to
+ * `^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$` — "format of version is major.minor.patch, major >= 1,
+ * minor >= 0, patch always 0" — so a two-component value fails outright.
+ */
+const PBIR_REPORT_DEFINITION_VERSION = "2.0.0";
 
 /** Deterministic PBIR object names, so regenerating never churns the diff. */
 function stableName(seed) {
@@ -70,14 +81,6 @@ const visualId = stableName("atlyn-cohort-retention-sample-visual");
 
 function readJson(relativePath) {
   return JSON.parse(fs.readFileSync(path.join(root, relativePath), "utf8"));
-}
-
-/**
- * Reads text with LF line endings regardless of how git checked the file out, so the
- * generated report is byte-identical on Windows and Linux.
- */
-function readText(...segments) {
-  return fs.readFileSync(path.join(root, ...segments), "utf8").replace(/\r\n/g, "\n");
 }
 
 function write(relativePath, contents) {
@@ -94,107 +97,6 @@ function writeJson(relativePath, value) {
 /** TMDL is indentation scoped and Power BI Desktop writes it tab-indented. */
 function tmdl(lines) {
   return `${lines.join("\n")}\n`;
-}
-
-/**
- * The plugin registration that `powerbi-visuals-webpack-plugin` normally appends to
- * the bundle. Its template emits `var <pluginName> = {...}`, which is a syntax error
- * here because this project's GUID is a hyphenated UUID rather than the
- * `name + uppercase hyphenless UUID` form that `pbiviz new` generates. Bracket
- * notation is valid JavaScript and semantically identical.
- */
-function pluginRegistration(pbiviz) {
-  const { guid, displayName, visualClassName, version } = pbiviz.visual;
-  return `
-/* Power BI visual plugin registration for ${displayName}. */
-(function () {
-    "use strict";
-    var powerbiKey = "powerbi";
-    var powerbiGlobal = typeof window !== "undefined" ? window[powerbiKey] : undefined;
-    if (!powerbiGlobal) return;
-    powerbiGlobal.visuals = powerbiGlobal.visuals || {};
-    powerbiGlobal.visuals.plugins = powerbiGlobal.visuals.plugins || {};
-    powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}] = {
-        name: ${JSON.stringify(guid)},
-        displayName: ${JSON.stringify(displayName)},
-        class: ${JSON.stringify(visualClassName)},
-        version: ${JSON.stringify(version)},
-        apiVersion: ${JSON.stringify(pbiviz.apiVersion)},
-        create: function (options) {
-            if (typeof AtlynCohortRetention !== "undefined" && AtlynCohortRetention.${visualClassName}) {
-                return new AtlynCohortRetention.${visualClassName}(options);
-            }
-            throw "Visual instance not found";
-        },
-        custom: true
-    };
-})();
-`;
-}
-
-function readStringResources() {
-  const directory = path.join(root, "stringResources");
-  const resources = {};
-  for (const locale of fs.readdirSync(directory).sort()) {
-    resources[locale] = JSON.parse(readText("stringResources", locale, "resources.resjson"));
-  }
-  return resources;
-}
-
-/**
- * Mirrors `getVisualConfig` and `generateResources` in
- * node_modules/powerbi-visuals-webpack-plugin/src/index.js, which is the packager that
- * produces the two files Power BI reads for an embedded custom visual.
- */
-function buildEmbeddedVisual(pbiviz, capabilities) {
-  const bundle = readText("dist", "visual.js");
-  const css = readText("style", "visual.less");
-  const icon = fs.readFileSync(path.join(root, "assets", "icon.png"));
-
-  const visual = {
-    name: pbiviz.visual.name,
-    displayName: pbiviz.visual.displayName,
-    guid: pbiviz.visual.guid,
-    visualClassName: pbiviz.visual.visualClassName,
-    version: pbiviz.visual.version,
-    description: pbiviz.visual.description,
-    supportUrl: pbiviz.visual.supportUrl || "",
-    gitHubUrl: pbiviz.visual.gitHubUrl || ""
-  };
-
-  const descriptor = {
-    version: pbiviz.visual.version,
-    author: pbiviz.author,
-    resources: [
-      {
-        resourceId: "rId0",
-        sourceType: 5,
-        file: `resources/${pbiviz.visual.guid}.pbiviz.json`
-      }
-    ],
-    visual,
-    metadata: { pbivizjson: { resourceId: "rId0" } }
-  };
-
-  const definition = {
-    visual,
-    author: pbiviz.author,
-    apiVersion: pbiviz.apiVersion,
-    style: "style/visual.less",
-    stringResources: readStringResources(),
-    capabilities,
-    dependencies: null,
-    content: {
-      js: `${bundle}${pluginRegistration(pbiviz)}`,
-      css,
-      iconBase64: `data:image/png;base64,${icon.toString("base64")}`
-    },
-    visualEntryPoint: "",
-    externalJS: [],
-    assets: { icon: "assets/icon.png" }
-  };
-
-  return { descriptor, definition };
 }
 
 /**
@@ -344,7 +246,7 @@ function main() {
   const pbiviz = readJson("pbiviz.json");
   const capabilities = readJson("capabilities.json");
   const guid = pbiviz.visual.guid;
-  const { descriptor, definition } = buildEmbeddedVisual(pbiviz, capabilities);
+  const { descriptor, definition } = buildVisualPackage(pbiviz, capabilities);
 
   fs.rmSync(path.join(samples, reportFolder), { recursive: true, force: true });
   fs.rmSync(path.join(samples, modelFolder), { recursive: true, force: true });
@@ -382,7 +284,7 @@ function main() {
   written.push(
     writeJson(`${reportFolder}/definition.pbir`, {
       $schema:
-        "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/1.0.0/schema.json",
+        "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
       version: PBIR_DEFINITION_VERSION,
       datasetReference: { byPath: { path: `../${modelFolder}` } }
     })
@@ -391,13 +293,20 @@ function main() {
     writeJson(`${reportFolder}/definition/version.json`, {
       $schema:
         "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
-      version: PBIR_DEFINITION_VERSION
+      version: PBIR_REPORT_DEFINITION_VERSION
     })
   );
   written.push(
     writeJson(`${reportFolder}/definition/report.json`, {
       $schema:
-        "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.4.0/schema.json",
+        "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.1.0/schema.json",
+      themeCollection: {
+        baseTheme: {
+          name: "CY24SU10",
+          reportVersionAtImport: "5.55",
+          type: "SharedResources"
+        }
+      },
       resourcePackages: [
         {
           name: guid,
