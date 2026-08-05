@@ -5,6 +5,7 @@ const JSZip = require("jszip");
 const less = require("less");
 const { getSourceManifest } = require("./package-manifest");
 const { resourceEntryName } = require("./visual-package");
+const { findRecordedValueDrift, readSupersededHashes } = require("./doc-hash-gate");
 
 const root = path.resolve(__dirname, "..");
 const pbiviz = readJson("pbiviz.json");
@@ -270,6 +271,58 @@ for (const value of [
 ]) {
   assert(dossier.includes(value), `the submission dossier does not record ${value}`);
 }
+
+/**
+ * The dossier and the changelog quote artifact hashes and byte sizes, and until now
+ * nothing checked them against the artifacts. A stale value did not fail the build — it
+ * sat there looking authoritative, and the packaged hash is precisely the number a human
+ * copies into the storefront release manifest when publishing. Compare every recorded
+ * value against bytes read from disk in this same run.
+ */
+const DOSSIER_PATH = "docs/partner-center-submission.md";
+const CHANGELOG_PATH = "CHANGELOG.md";
+const recordedValueDrift = findRecordedValueDrift({
+  documents: [
+    { path: DOSSIER_PATH, text: dossier },
+    { path: CHANGELOG_PATH, text: fs.readFileSync(path.join(root, CHANGELOG_PATH), "utf8") }
+  ],
+  supersededHashes: readSupersededHashes(dossier),
+  liveValues: [
+    {
+      label: "packaged .pbiviz",
+      sha256: packageSha256,
+      sizeBytes: fs.statSync(packagePath).size,
+      requiredIn: [DOSSIER_PATH, CHANGELOG_PATH]
+    },
+    {
+      label: "visualization pane icon",
+      sha256: publicationMetadata.sourceIcon.sha256,
+      sizeBytes: iconBytes.length,
+      artifactPath: publicationMetadata.sourceIcon.path,
+      requiredIn: [DOSSIER_PATH]
+    },
+    {
+      label: "Partner Center logo",
+      sha256: logo.sha256,
+      sizeBytes: logoBytes.length,
+      artifactPath: logo.path,
+      requiredIn: [DOSSIER_PATH]
+    },
+    ...screenshots.map((screenshot) => ({
+      label: screenshot.path,
+      sha256: screenshot.sha256,
+      sizeBytes: fs.statSync(path.join(root, screenshot.path)).size,
+      artifactPath: screenshot.path,
+      requiredIn: [DOSSIER_PATH]
+    }))
+  ]
+});
+assert(
+  recordedValueDrift.length === 0,
+  `the documentation records values that no longer match the artifacts:\n  - ${recordedValueDrift
+    .map((finding) => finding.message)
+    .join("\n  - ")}`
+);
 
 const sampleRoot = path.join(root, "samples");
 const sampleProject = "AtlynSample";

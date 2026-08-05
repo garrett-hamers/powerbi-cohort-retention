@@ -35,6 +35,14 @@ Chromium and refuses to fall back to the source tree. It is the only gate that o
 layout, because jsdom performs no layout — sticky positioning, z-index stacking, and
 containing-block resolution are invisible to `npm test`.
 
+**If your change alters the packaged bytes**, the recorded hashes and byte sizes in
+`docs/partner-center-submission.md` and `CHANGELOG.md` must move with them.
+`scripts/doc-hash-gate.js` enforces this from inside `npm run package`: it hashes the
+artifacts on disk and fails with a file and line for any recorded value that no longer
+matches. Move the superseded hash into the dossier's "Do not publish any earlier hash"
+paragraph — that paragraph is the machine-read register of values that are historical on
+purpose, and anything outside it is treated as stale.
+
 If you add a fixture to it, make it overflow its scrollport and keep the
 `scrollHeight > clientHeight` assertion ahead of every sticky assertion. A fixture that
 fits its viewport never scrolls, `position: sticky` never engages, and the whole check
