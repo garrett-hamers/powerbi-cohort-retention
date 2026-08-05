@@ -39,6 +39,28 @@ function bytes(text) {
 }
 
 /**
+ * THE definition of "the packaged CSS matches the stylesheet", shared by
+ * `scripts/certification-audit.js` and `scripts/render-check.js` so the two cannot drift
+ * into disagreeing about what "matches" means.
+ *
+ * Byte-identical, after the same LF normalisation `visual-package.js` applies when it
+ * builds `content.css`. (The audit historically compared against the raw disk read, which
+ * is equivalent only because `.gitattributes` pins the repo to LF; normalising here makes
+ * the rule correct rather than merely correct-by-configuration.)
+ *
+ * NOT to be confused with the OTHER comparison in the certification audit, which strips
+ * whitespace to compare a LESS render against the packaged CSS. That answers a different
+ * question — "is the stylesheet still already-valid CSS, so shipping it uncompiled is
+ * safe?" — and its two sides are legitimately different sizes: on a current tree the raw
+ * file is 5,167 bytes and the LESS output 5,088. Reusing that rule here would accept a
+ * stale artifact whose whitespace happened to normalise the same, which is worse than
+ * having no check at all.
+ */
+function packagedCssMatchesSource(packagedCss, stylesheetSource) {
+  return normalize(packagedCss) === normalize(stylesheetSource);
+}
+
+/**
  * Pure. Returns a list of problems; empty means the archive was built from these sources.
  *
  * Each source is optional: pass only what you can read. A source that is absent is not
@@ -48,13 +70,12 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
   const problems = [];
 
   if (typeof packagedCss === "string" && typeof stylesheetSource === "string") {
-    const expected = normalize(stylesheetSource);
-    if (normalize(packagedCss) !== expected) {
+    if (!packagedCssMatchesSource(packagedCss, stylesheetSource)) {
       problems.push({
         kind: STALE_CSS,
         message:
           `packaged content.css (${bytes(packagedCss)} bytes) does not match ` +
-          `style/visual.less (${bytes(expected)} bytes)`
+          `style/visual.less (${bytes(normalize(stylesheetSource))} bytes)`
       });
     }
   }
@@ -92,4 +113,11 @@ function formatStaleArtifactError(archiveLabel, problems) {
   ].join("\n");
 }
 
-module.exports = { STALE_CSS, STALE_JS, findStalePackagedContent, formatStaleArtifactError, normalize };
+module.exports = {
+  STALE_CSS,
+  STALE_JS,
+  findStalePackagedContent,
+  formatStaleArtifactError,
+  normalize,
+  packagedCssMatchesSource
+};

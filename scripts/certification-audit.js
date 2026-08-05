@@ -6,6 +6,7 @@ const less = require("less");
 const { getSourceManifest } = require("./package-manifest");
 const { resourceEntryName } = require("./visual-package");
 const { findRecordedValueDrift, readSupersededHashes } = require("./doc-hash-gate");
+const { packagedCssMatchesSource } = require("./package-freshness");
 
 const root = path.resolve(__dirname, "..");
 const pbiviz = readJson("pbiviz.json");
@@ -98,7 +99,13 @@ async function assertPackagedVisual(archive) {
   const packagedCss = definition.content?.css;
   assert(typeof packagedCss === "string" && packagedCss.trim() !== "",
     "the packaged resource ships no CSS; the visual would render completely unstyled");
-  assert(packagedCss === stylesheetSource, "the packaged CSS does not match style/visual.less");
+  assert(
+    // The SAME rule the render check uses, so the two cannot drift into disagreeing about
+    // what "matches" means. Deliberately not the whitespace-stripped comparison below:
+    // that one answers a different question and would accept a stale artifact.
+    packagedCssMatchesSource(packagedCss, stylesheetSource),
+    "the packaged CSS does not match style/visual.less"
+  );
   assert(/\{[^{}]*:[^{}]*\}/.test(packagedCss), "the packaged CSS contains no declarations");
 
   const compiled = await less.render(packagedCss, { filename: pbiviz.style });
