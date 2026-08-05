@@ -8,6 +8,10 @@
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  /* Load-bearing. The <caption> below is absolutely positioned; without a positioned
+     ancestor it resolves against the initial containing block, so it belongs to the page
+     rather than to the visual and `overflow: hidden` here cannot clip it. */
+  position: relative;
   --atlyn-cell-padding: 6px;
   --atlyn-foreground: currentColor;
   --atlyn-background: Canvas;
@@ -36,10 +40,21 @@
   table-layout: fixed;
 }
 
+/* Screen-reader-only. Size plus `overflow: hidden` alone is not enough: without
+   `clip-path` a sliver of the label can still paint, and without `white-space: nowrap`
+   a long caption reflows inside the 1px box. Pinned to the root's own origin so the box
+   stays inside the bounds the root clips. */
 .atlyn-matrix caption {
+  border: 0;
+  clip-path: inset(50%);
   height: 1px;
+  left: 0;
+  margin: 0;
   overflow: hidden;
+  padding: 0;
   position: absolute;
+  top: 0;
+  white-space: nowrap;
   width: 1px;
 }
 
@@ -56,16 +71,36 @@
 .atlyn-matrix th {
   background: #f4f4f4;
   font-weight: 600;
-  position: sticky;
-  top: 0;
-  z-index: 1;
 }
 
+/* Sticky positioning is scoped per band on purpose. A shared
+   `.atlyn-matrix th { position: sticky; top: 0 }` also pinned every ROW header
+   vertically, so scrolling down piled the cohort labels on top of one another at the
+   top of the scrollport and covered the period headers. */
+.atlyn-matrix thead th {
+  position: sticky;
+  /* Overridden per header band by src/visual.ts when the Period hierarchy is expanded,
+     so nested levels stack instead of collapsing onto the first. */
+  top: 0;
+  z-index: 3;
+}
+
+/* Row headers stick to the inline start ONLY. `top: auto` is the reset that keeps them
+   scrolling vertically with their own row; their z-index must stay below the column
+   header band they scroll under. */
 .atlyn-matrix tbody th {
   left: 0;
   position: sticky;
   text-align: left;
+  top: auto;
   z-index: 2;
+}
+
+/* The corner label sits where both sticky bands cross, so it pins in both axes and must
+   paint above both. */
+.atlyn-matrix thead th.atlyn-corner {
+  left: 0;
+  z-index: 4;
 }
 
 .atlyn-matrix td {
@@ -179,6 +214,11 @@
   left: auto;
   right: 0;
   text-align: right;
+}
+
+[dir="rtl"] .atlyn-matrix thead th.atlyn-corner {
+  left: auto;
+  right: 0;
 }
 
 @media (max-width: 480px) {

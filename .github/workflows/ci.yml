@@ -28,6 +28,10 @@ jobs:
       # first `npm test` above. Re-run them now that the package has been built, so the
       # loadability gate actually executes in CI.
       - run: npm test -- tests/packaging.test.ts
+      # Sticky positioning and containing-block resolution are layout, and jsdom performs
+      # no layout, so this is the only gate that can see them. It renders the packaged
+      # content.js/content.css out of the .pbiviz just built above, in headless Chromium.
+      - run: npm run render:check
       - run: npm audit
       # Publish the built .pbiviz so its hash can be verified by download-and-rehash rather
       # than trusted from a report. A reported hash goes stale the moment another change

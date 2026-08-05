@@ -2,6 +2,64 @@
 
 ## Unreleased
 
+- **Fixed three CSS defects that were live on `main`.** They had been dormant for months
+  because the packaged `.pbiviz` had a broken structure and the stylesheet never reached
+  Power BI; fixing the package layout shipped `content.css` for the first time and activated
+  them. All three are invisible at rest and only appear once the matrix is scrolled.
+  1. **Row headers piled up on vertical scroll.** `.atlyn-matrix tbody th` set `left: 0` but
+     never reset `top`, so it inherited `top: 0` from the shared `.atlyn-matrix th` rule and
+     stuck vertically as well as horizontally. Measured in a real render at `scrollTop` 180,
+     row-header tops collapsed from `[114, 143, 172, 201, 230, 259, …]` (29px apart) to
+     `[83, 83, 83, 83, 83, 83, 108, 137, …]` — six headers stacked on one another, covering
+     the period headers. Sticky positioning is now scoped to `.atlyn-matrix thead th`, and
+     `.atlyn-matrix tbody th` declares `top: auto` as an explicit reset. The same tops are now
+     `[-66, -37, -8, 21, 50, 79, 108, 137, …]`, all 26 distinct.
+  2. **The z-index was inverted at the sticky corner.** `tbody th` had `z-index: 2` against
+     `thead th`'s `1`, so a row header painted **over** the column header where the two sticky
+     bands cross. The band order is now corner 4 > `thead th` 3 > `tbody th` 2, and the corner
+     cell (tagged `.atlyn-corner` by `src/visual.ts`) pins to the inline start in both writing
+     directions so it stays over the intersection instead of scrolling away from it.
+  3. **The screen-reader `<caption>` was not contained.** The visual root computed
+     `position: static`, so the absolutely positioned caption resolved against the *initial
+     containing block* — it belonged to the page, and the root's `overflow: hidden` could not
+     clip it. It appeared contained only by luck, because it is 1x1. The root is now
+     `position: relative` and the caption uses the complete visually-hidden pattern
+     (`clip-path: inset(50%)`, `white-space: nowrap`, `margin: 0`, pinned to `top: 0; left: 0`)
+     so the box stays inside the bounds the root clips.
+- **Also fixed, same root cause, one axis over:** nested column-header bands all rested on
+  `top: 0` and collapsed onto each other when the Period hierarchy was expanded (measured band
+  tops `[218, 218]`). `src/visual.ts` now measures once per render and writes a per-band sticky
+  offset, but only when there is more than one band, so the single-band path is untouched.
+- **Added `npm run render:check`** (`scripts/render-check.js`, `scripts/headless-browser.js`,
+  `scripts/packaged-visual.js`, `tools/packaged-harness/index.html`). It renders the **packaged
+  bytes** — `content.js` and `content.css` read back out of `dist/atlyn-cohort-retention.pbiviz`
+  through the manifest indirection, never the source tree — in headless Chromium, and boots the
+  visual through its own packaged plugin registration. CI runs it after `npm run package`.
+- **The gate that matters is the overflow gate.** An earlier render check reported "no latent
+  bugs" with all three defects present, because its fixture fit the viewport
+  (`scrollHeight 1114 === clientHeight 1114`): nothing scrolled, `position: sticky` never
+  engaged, and every at-rest assertion — stylesheet parsed, `display: flex`, zero elements out
+  of bounds — passed vacuously. `scripts/render-check.js` therefore asserts
+  `scrollHeight > clientHeight` and `scrollWidth > clientWidth` **before** it asserts anything
+  about stickiness, so a fixture that stops overflowing fails loudly instead of passing
+  silently. It runs against a 26 x 18 cohort matrix in a 520 x 320 scrollport. Run against the
+  unfixed stylesheet it fails 16 assertions; against the fixed one it passes all 40.
+- **Screenshot coverage does not imply scroll coverage.** `npm run screenshots` sizes every
+  fixture to fit its container by construction — a submission screenshot has to show the whole
+  matrix — so no capture ever scrolls and none of this bug class is observable there. Recorded
+  in `README.md`, `CONTRIBUTING.md`, and `docs/partner-center-submission.md` section 9a. The
+  three committed PNGs were re-captured after the fix and are **byte-identical**, which is
+  itself the demonstration: the screenshots could not see any of this.
+- `tests/styles.test.ts` asserts the CSS *rules* behind each finding plus the markup they
+  depend on, so `npm test` still catches a regression on a machine with no browser.
+- **The packaged bytes changed**, because `style/visual.less` is a packaged input inlined as
+  `content.css`. The artifact is now
+  `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` at 21,831 bytes, with
+  5,167 bytes of CSS inline (was 3,524). The GUID, the packaged filename, and the version
+  `1.0.1.0` are all unchanged; nothing has been distributed at `1.0.1.0`, so this stays within
+  the same version. The sample report was regenerated with `npm run sample:report` rather than
+  hand-edited, so its embedded copy carries the same CSS.
+
 - **Changed the visual GUID to `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`**, from the
   hyphenated UUID `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11`. The new value **preserves the original
   UUID exactly** — `D9F6B5A21F844B6DA0F78C2C4E2E6A11` is the same hex with the hyphens removed and

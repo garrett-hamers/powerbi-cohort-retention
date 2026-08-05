@@ -343,9 +343,9 @@ kind — it is a normal smoke test, not a format risk.
 | Visual version | `1.0.1.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` |
-| Size | 20,684 bytes |
-| Packaged CSS | 3,524 bytes, inline as `content.css` |
+| SHA-256 | `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` |
+| Size | 21,831 bytes |
+| Packaged CSS | 5,167 bytes, inline as `content.css` |
 | Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
 The packaged filename carries no version segment and **no GUID segment** — `scripts/package.js`
@@ -435,18 +435,21 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` | 20,684 bytes |
-| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` | 20,684 bytes |
+| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` | 21,831 bytes |
+| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` | 21,831 bytes |
 
-**Confirmed identical**, so `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f`
-at 20,684 bytes is the value to publish in the release manifest, under
+**Confirmed identical**, so `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b`
+at 21,831 bytes is the value to publish in the release manifest, under
 `cohort-retention/1.0.1.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from
 `dist/package-metadata.json` of the build whose `.pbiviz` you actually upload, and never mix a
 hash from one environment with a binary from another.
 
-**Do not publish any earlier hash.** Every one of them belongs to the unloadable flat-layout
+**Do not publish any earlier hash.** Superseded within `1.0.1.0`:
+`abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` (20,684 bytes — the
+sticky-header and caption stylesheet fixes changed `content.css`). Every hash before that
+belongs to the unloadable flat-layout
 archive: `6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` (20,950 bytes, the
 artifact currently on the storefront at `cohort-retention/1.0.0.0/`),
 `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` (20,899 bytes),
@@ -478,8 +481,8 @@ built package:
 
 | Artifact | Where the CSS lives | Bytes |
 | --- | --- | --- |
-| `dist/atlyn-cohort-retention.pbiviz` | `content.css` in `resources/<GUID>.pbiviz.json` | 3,524 |
-| `samples/…/CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json` | `content.css` | 3,524 |
+| `dist/atlyn-cohort-retention.pbiviz` | `content.css` in `resources/<GUID>.pbiviz.json` | 5,167 |
+| `samples/…/CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json` | `content.css` | 5,167 |
 
 Both are byte-identical to `style/visual.less`, and `content.css` is the field Power BI
 injects as the visual's stylesheet. Both are produced by the same
@@ -529,6 +532,34 @@ fails instead of quietly producing a screenshot that still passes the dimension 
 gates. Re-running `npm run screenshots` reproduces the three committed PNGs byte-for-byte,
 which confirms the committed screenshots already represent the styled product.
 
+### Screenshot coverage does not imply scroll coverage
+
+A submission screenshot has to show the whole matrix, so every capture fixture is sized to
+**fit** its container. Nothing scrolls during a capture, and `position: sticky` behaves
+exactly like `position: static` until a scrollport actually overflows. The table above is
+therefore an at-rest measurement only: it cannot observe sticky headers, sticky stacking
+order, or containing-block resolution, and a clean capture is not evidence that any of them
+work. Three defects in exactly that blind spot shipped in the stylesheet above and were
+found only once the visual was rendered **scrolled**.
+
+`npm run render:check` (`scripts/render-check.js`) closes it. It renders the packaged
+`content.js` and `content.css` — read back out of `dist/atlyn-cohort-retention.pbiviz`, not
+off the source tree — into `tools/packaged-harness/index.html` in headless Chromium,
+instantiates the visual through its own packaged plugin registration, constrains the
+scrollport so a 26 x 18 cohort matrix cannot fit, and asserts
+`scrollHeight > clientHeight` **before** it asserts anything about stickiness. A fixture that
+stops overflowing fails the run instead of passing it vacuously. Measured in that live
+render, on the stylesheet as fixed:
+
+| Property | Value |
+| --- | --- |
+| Row-header tops at rest | `[114, 143, 172, 201, 230, 259, 288, 317, …]` |
+| Row-header tops at `scrollTop` 180 | `[-66, -37, -8, 21, 50, 79, 108, 137, …]`, all 26 distinct |
+| Sticky corner ownership | `thead th.atlyn-corner`, z-index 4 over thead 3 over tbody 2 |
+| `<caption>` containing block | `div.atlyn-cohort-visual`, box inside the root's clipped bounds |
+
+CI runs it after `npm run package`, against the artifact that run just built.
+
 ## 10. Automated verification
 
 | Command | What it proves |
@@ -540,6 +571,7 @@ which confirms the committed screenshots already represent the styled product.
 | `npm run sample:report` | Regenerates the offline sample report from the current build. |
 | `npm run publication:assets:enforce` | Fails the build on any submission-asset or metadata blocker. Wired into both `npm run package` and CI. |
 | `npm run package` | Version gate, deterministic package, reproducibility check, enforced publication assets, certification audit (which re-checks the sample report structurally and gates the packaged stylesheet — see [section 9a](#9a-stylesheet-packaging)). |
+| `npm run render:check` | Renders the packaged `content.js` + `content.css` from the built `.pbiviz` in headless Chromium, in a deliberately overflowing scrollport, and asserts sticky row-header geometry, sticky-corner stacking order, nested header-band stacking, and `<caption>` containment. The only gate that observes layout; jsdom performs none. |
 | `npm audit` | Dependency advisories. |
 
 `dist/publication-readiness.json` is regenerated by every packaging run and
