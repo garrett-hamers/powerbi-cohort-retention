@@ -32,8 +32,10 @@ and
 | Author email | `author.email` | `atlyn.help@gmail.com` |
 | Icon | `assets.icon` | `assets/icon.png` |
 
-> **The GUID must never change.** It is already recorded in the owner's storefront
-> release manifest and in the artifact download paths.
+> **The GUID is frozen from the first loadable artifact onward.** It was changed
+> once, before publication, and that window is now closed. See
+> [the GUID format section](#the-visual-guid-is-in-the-toolchains-format) for why
+> that change was free at the time and is not repeatable.
 
 The previous `author.email` value used the RFC 2606 reserved `.example` TLD and
 would have failed Partner Center validation. It has been replaced with the
@@ -319,10 +321,26 @@ portfolio not in that format. The GUID is now
 uppercased, so the original identity is preserved exactly while the value becomes
 identifier-safe.
 
-**Why this was safe to change.** The visual has never been published to AppSource,
-so no Partner Center offer, no report, and no tenant references the old GUID. A
-GUID change after publication would orphan every existing report that binds the
-visual by `visualType`, and would not be safe.
+**Why this was safe to change, once.** Two things had to be true at the same
+time, and both were:
+
+1. **Nothing was published to AppSource.** No Partner Center offer references the
+   old GUID.
+2. **The artifact that *had* been distributed was structurally unloadable.** The
+   storefront was serving
+   `6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` at
+   `cohort-retention/1.0.0.0/` — a flat source-tree archive with no `package.json`
+   manifest and no `resources/` directory, so Power BI had nothing to resolve and
+   the import could never succeed. A visual that cannot be imported cannot appear
+   in anyone's saved report, so no `visualType` binding to the old GUID can exist
+   anywhere. See [section 9](#9-packaged-artifact).
+
+**Why it is not repeatable.** The rule is not "the GUID must never change" — it is
+that the GUID is **frozen from the first artifact a user can successfully import**.
+From that point it is embedded in every saved report's `visualType`, on top of the
+storefront release manifest and the version-keyed download paths, and changing it
+would orphan every report that binds the visual. This build is that artifact, so
+the window is closed and the GUID is now irreversible.
 
 **Plugin registration.** The registration in `scripts/visual-package.js` assigns
 `powerbi.visuals.plugins["<GUID>"] = {...}`. That is not a workaround: the
