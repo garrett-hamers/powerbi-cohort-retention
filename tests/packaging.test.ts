@@ -241,6 +241,10 @@ describe("clean visual package metadata", () => {
     expect(fs.existsSync(path.join(root, "scripts", "certification-audit.js"))).toBe(true);
     expect(fs.existsSync(path.join(root, "scripts", "publication-assets.js"))).toBe(true);
     expect(fs.existsSync(path.join(root, "scripts", "reproducibility-check.js"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "samples", "AtlynSample.pbip"))).toBe(true);
+    expect(
+      fs.readFileSync(path.join(root, "scripts", "publication-assets.js"), "utf8")
+    ).toContain("samples/AtlynSample.pbip");
   });
 
   test("enforces the publication asset gate in CI", () => {
