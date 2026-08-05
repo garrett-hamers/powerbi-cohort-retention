@@ -15,7 +15,7 @@ const root = path.resolve(__dirname, "..");
  */
 describe("packaged .pbiviz is loadable by a host", () => {
   const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
-  const guid = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+  const guid = "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11";
   const hasPackage = fs.existsSync(packagePath);
   const maybe = hasPackage ? test : test.skip;
 
@@ -166,7 +166,7 @@ describe("clean visual package metadata", () => {
   test("keeps the GUID stable and has no privileges", () => {
     const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8"));
-    expect(pbiviz.visual.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
+    expect(pbiviz.visual.guid).toBe("atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11");
     expect(pbiviz.visual.version).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
     expect(pbiviz.externalJS).toEqual([]);
     expect(capabilities.privileges).toEqual([]);
@@ -222,7 +222,7 @@ describe("clean visual package metadata", () => {
     const metadataPath = path.join(root, "dist", "package-metadata.json");
     if (fs.existsSync(metadataPath)) {
       const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
-      expect(metadata.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
+      expect(metadata.guid).toBe("atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11");
       expect(metadata.privileges).toEqual([]);
     }
   });
@@ -311,7 +311,7 @@ describe("AppSource submission assets", () => {
     const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     expect(pbiviz.visual.name).toBeTruthy();
     expect(pbiviz.visual.displayName).toBeTruthy();
-    expect(pbiviz.visual.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
+    expect(pbiviz.visual.guid).toBe("atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11");
     expect(pbiviz.visual.version).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
     expect(pbiviz.visual.description.length).toBeGreaterThanOrEqual(120);
     expect(pbiviz.visual.supportUrl).toBe("https://atlyn.io/contact");
@@ -334,7 +334,7 @@ describe("AppSource submission assets", () => {
       "utf8"
     );
     [
-      "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11",
+      "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11",
       "https://atlyn.io/contact",
       "https://atlyn.io/legal/privacy",
       "atlyn.help@gmail.com",

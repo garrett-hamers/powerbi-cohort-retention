@@ -22,7 +22,7 @@ and
 | --- | --- | --- |
 | Visual name | `visual.name` | `atlynCohortRetention` |
 | Display name | `visual.displayName` | `Atlyn Cohort Retention` |
-| Visual GUID | `visual.guid` | `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` |
+| Visual GUID | `visual.guid` | `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11` |
 | Version (four parts) | `visual.version` | `1.0.1.0` |
 | API version | `apiVersion` | `5.11.1` |
 | Description | `visual.description` | See [section 2](#2-listing-description). 641 characters. |
@@ -299,36 +299,42 @@ declares a `partition ... = m` Power Query partition instead of a calculated tab
 They also fail if `publicCustomVisuals` appears in `report.json`, since that
 resolves the visual from the AppSource store rather than from the embedded package.
 
-### Risk: the visual GUID is not in the toolchain's format
+### The visual GUID is in the toolchain's format
 
-This is unresolved and needs an owner decision.
+This was previously an open risk and is now resolved.
 
-`node_modules/powerbi-visuals-tools/lib/VisualGenerator.js` line 46 generates a
-visual GUID as `name + crypto.randomUUID().replace(/-/g, "").toUpperCase()`. For
-this project that would be `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`.
-Every GUID the official tooling produces is therefore a **valid JavaScript
-identifier**.
-
-This repository's GUID is the hyphenated UUID
-`d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11`. The official plugin template
+`node_modules/powerbi-visuals-tools/lib/VisualGenerator.js` generates a visual
+GUID as `name + crypto.randomUUID().replace(/-/g, "").toUpperCase()`. Every GUID
+the official tooling produces is therefore a **valid JavaScript identifier**,
+because the official plugin template
 (`node_modules/powerbi-visuals-webpack-plugin/templates/plugin-template.js` line
-17) emits `var <pluginName>: IVisualPlugin = {...}`, which is a **syntax error**
-for a hyphenated name. That is the concrete, verifiable reason this repository
-cannot use the CLI's package compiler as its package producer, as noted in
-`README.md`.
+17) emits `var <pluginName>: IVisualPlugin = {...}`, and a hyphenated name is a
+**syntax error** in that declaration position.
 
-**What was done:** the GUID is frozen because it is already recorded in the
-owner's storefront release manifest and artifact download paths, so the sample
-report's embedded bundle registers the plugin with bracket notation,
-`powerbi.visuals.plugins["d9f6b5a2-..."] = {...}`. That is valid JavaScript and
-semantically identical to the official template, and a JSDOM test proves the
-plugin registers and renders.
+This repository originally used the hyphenated UUID
+`d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11`, which was the only value in the owner's
+portfolio not in that format. The GUID is now
+`atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`: the `visual.name`
+`atlynCohortRetention` followed by the **same UUID**, hyphens removed and
+uppercased, so the original identity is preserved exactly while the value becomes
+identifier-safe.
 
-**What is unverified:** whether **Power BI Desktop and Partner Center accept a
-hyphenated GUID** as a visual type. This repository cannot test that. If either
-rejects it, the only fix is a GUID change, which would also require re-publishing
-the storefront release manifest and artifact download paths. Validate this during
-the one-time Power BI Desktop step above, before submitting.
+**Why this was safe to change.** The visual has never been published to AppSource,
+so no Partner Center offer, no report, and no tenant references the old GUID. A
+GUID change after publication would orphan every existing report that binds the
+visual by `visualType`, and would not be safe.
+
+**Plugin registration.** The registration in `scripts/visual-package.js` assigns
+`powerbi.visuals.plugins["<GUID>"] = {...}`. That is not a workaround: the
+official template registers the same way, `powerbi.visuals.plugins["${pluginName}"]
+= ${pluginName};`, and only the intermediate `var` binding is omitted here because
+this registration is written directly as JavaScript rather than compiled from
+TypeScript. A JSDOM test evaluates the packaged `content.js`, asserts the plugin
+registers under the new GUID, and instantiates it through `plugin.create()`.
+
+**Still owner-verified:** that Power BI Desktop loads the visual under the new
+GUID during the one-time `.pbix` conversion step. That check is unchanged in
+kind — it is a normal smoke test, not a format risk.
 
 ## 9. Packaged artifact
 
@@ -337,12 +343,15 @@ the one-time Power BI Desktop step above, before submitting.
 | Visual version | `1.0.1.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809` |
-| Size | 20,652 bytes |
+| SHA-256 | `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` |
+| Size | 20,684 bytes |
 | Packaged CSS | 3,524 bytes, inline as `content.css` |
+| Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
-The packaged filename carries no version segment — `scripts/package.js` writes a fixed
-`dist/atlyn-cohort-retention.pbiviz` — so only the version-keyed storefront path changes.
+The packaged filename carries no version segment and **no GUID segment** — `scripts/package.js`
+writes a fixed `dist/atlyn-cohort-retention.pbiviz` — so the GUID change did not rename the
+artifact. Only the version-keyed storefront path changes, and only when the version changes.
+The GUID appears inside the archive, as the `resources/<GUID>.pbiviz.json` entry name.
 
 ### The package layout was wrong, and is fixed
 
@@ -418,18 +427,19 @@ byte size, platform, Node version, and zlib version, and writes the hash to
 `dist/package-metadata.json` as `packageSha256`.
 
 The archive is now built directly in memory with sorted entries, a fixed DOS timestamp, fixed
-permissions, no directory entries, and no archive comment. That removes the previous
-dependency on external `zip` / `Compress-Archive` producers, which disagreed about emitting
-directory entries and once accounted for a 490-byte gap between Linux and Windows builds.
+permissions, the single `resources/` directory entry the official packager emits, and no
+archive comment. That removes the previous dependency on external `zip` / `Compress-Archive`
+producers, which disagreed about emitting directory entries and once accounted for a 490-byte
+gap between Linux and Windows builds.
 Combined with the `.gitattributes` LF pin, the artifact is identical on every platform.
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809` | 20,652 bytes |
-| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809` | 20,652 bytes |
+| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` | 20,684 bytes |
+| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` | 20,684 bytes |
 
-**Confirmed identical**, so `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809`
-at 20,652 bytes is the value to publish in the release manifest, under
+**Confirmed identical**, so `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f`
+at 20,684 bytes is the value to publish in the release manifest, under
 `cohort-retention/1.0.1.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from
@@ -551,8 +561,10 @@ These cannot be completed from this repository.
    shows values. The PBIP is generated and validated here; the `.pbix` conversion
    cannot be done headlessly, and `pbi-tools compile` is broken against the
    installed Desktop version. See [section 8b](#8b-sample-report-offline).
-2. **Confirm Power BI Desktop accepts the hyphenated visual GUID** during step 1.
-   This is an open risk, see the GUID risk subsection of section 8b.
+2. **Confirm the visual loads under the GUID
+   `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`** during step 1. The GUID
+   is now in the format the official tooling generates; see the GUID format
+   subsection of section 8b.
 3. **Create or confirm the Partner Center account** and the Power BI visual offer,
    configured as a **free** offer per [section 8a](#8a-licensing-and-pricing).
 4. **Upload the packaged `.pbiviz`** from `dist/atlyn-cohort-retention.pbiviz`.

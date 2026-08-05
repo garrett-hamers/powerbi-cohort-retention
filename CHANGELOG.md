@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased
+
+- **Changed the visual GUID to `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`**, from the
+  hyphenated UUID `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11`. The new value **preserves the original
+  UUID exactly** — `D9F6B5A21F844B6DA0F78C2C4E2E6A11` is the same hex with the hyphens removed and
+  uppercased — prefixed with the `visual.name` `atlynCohortRetention`, so provenance is retained.
+  The version is deliberately **not** bumped; this stays at `1.0.1.0`.
+- **Why.** `node_modules/powerbi-visuals-tools/lib/VisualGenerator.js` builds a visual GUID as
+  `name + crypto.randomUUID().replace(/-/g, "").toUpperCase()`, so every GUID the official tooling
+  produces is a valid JavaScript identifier. It has to be: the official plugin template
+  (`node_modules/powerbi-visuals-webpack-plugin/templates/plugin-template.js`) declares
+  `var <pluginName>: IVisualPlugin = {...}`, and a hyphenated name is a syntax error in that
+  position. The old GUID was the only value in the owner's portfolio not in that format.
+- **This was safe only because the visual has never been published to AppSource.** No Partner
+  Center offer, report, or tenant references the old GUID. After publication a GUID change would
+  orphan every report that binds the visual by `visualType`, and must not be done.
+- The change cascades through `pbiviz.json`, `src/visual.ts` `VISUAL_GUID`, the pinned expectations
+  in `scripts/certification-audit.js` and `tests/packaging.test.ts`, the packaged archive's
+  `resources/<GUID>.pbiviz.json` entry with the `resources[].file` and
+  `metadata.pbivizjson.resourceId` indirection that points at it, and the regenerated sample report
+  — the `CustomVisuals/<GUID>/` directory, the `<GUID>.pbiviz.json` resource filename, the
+  `resourcePackages` entry name plus its item name and path in `report.json`, and `visualType` in
+  the page's `visual.json`. The sample report was regenerated with `npm run sample:report` rather
+  than hand-edited.
+- **The packaged artifact filename did not change.** `scripts/package.js` writes a fixed
+  `dist/atlyn-cohort-retention.pbiviz`, which embeds neither the version nor the GUID, so the
+  storefront download path keeps its current shape. The GUID appears only *inside* the archive, as
+  the `resources/<GUID>.pbiviz.json` entry name.
+- **The packaged bytes changed**, because `pbiviz.json` is a packaged input and the GUID appears in
+  the manifest, the resource entry name, and the plugin registration inside `content.js`. The new
+  artifact is `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` at 20,684 bytes,
+  with 3,524 bytes of CSS still inline as `content.css`. Nothing was ever distributed at `1.0.1.0`,
+  so this stays within the same version.
+- **Resolved the open GUID risk** carried in the 1.0.1.0 notes and in
+  `docs/partner-center-submission.md`. Verified while doing so that the bracket-notation plugin
+  registration was never a hyphen workaround: the official template registers the same way,
+  `powerbi.visuals.plugins["${pluginName}"] = ${pluginName};`, with the registry key as a bracketed
+  string literal. Only the intermediate `var` binding is omitted, because this registration is
+  written directly as JavaScript rather than compiled from TypeScript. It is therefore kept as is,
+  and the comments in `scripts/visual-package.js`, `samples/README.md`, `README.md`, and the
+  dossier that attributed it to the hyphen are corrected.
+
 ## 1.0.1.0
 
 - **Fixed the `.pbiviz` package layout, which Power BI could not have loaded.** A `.pbiviz` is
@@ -159,6 +201,11 @@ hyphenated UUID, which breaks the official plugin template. The sample report's 
 bundle works around it with bracket-notation plugin registration, but acceptance by Power
 BI Desktop and Partner Center is unverified. See the GUID risk section of
 `docs/partner-center-submission.md`.
+
+> **Superseded by the Unreleased entry above.** The GUID is now
+> `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`, which is in the format the official
+> tooling generates, so this risk no longer applies. The bracket-notation registration is
+> retained because the official template registers the same way; it was never a workaround.
 
 ## 1.0.0
 

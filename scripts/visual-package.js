@@ -34,10 +34,14 @@ function readText(...segments) {
 
 /**
  * The plugin registration that `powerbi-visuals-webpack-plugin` normally appends to the
- * bundle. Its template emits `var <pluginName> = {...}`, which is a syntax error here
- * because this project's GUID is a hyphenated UUID rather than the
- * `name + uppercase hyphenless UUID` form that `pbiviz new` generates. Bracket notation is
- * valid JavaScript and semantically identical.
+ * bundle. Its template (`templates/plugin-template.js`) declares `var <pluginName>: IVisualPlugin
+ * = {...}` and then registers it as `powerbi.visuals.plugins["<pluginName>"] = <pluginName>;`.
+ * The registry assignment is bracket notation with a string key in the official template too, so
+ * the form below matches it; only the intermediate `var` binding is omitted, because this
+ * registration is written directly as JavaScript rather than compiled from TypeScript.
+ *
+ * The GUID is `name + uppercase hyphenless UUID`, the form `pbiviz new` generates, so it is a
+ * valid JavaScript identifier and the `var` declaration position would be legal here as well.
  */
 function pluginRegistration(pbiviz) {
   const { guid, displayName, visualClassName, version } = pbiviz.visual;

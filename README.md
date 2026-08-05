@@ -55,10 +55,13 @@ npm run audit
 ```
 
 `npm run package` runs the direct `pbiviz` version gate, creates the package from
-source inputs, and runs the certification audit. The current Power BI CLI's
-internal package compiler is not used as the package producer because its
-generated plugin uses UUIDs as JavaScript identifiers; the repository retains the
-valid stable UUID and applies the equivalent source/package gates locally.
+source inputs, and runs the certification audit. The package is built by
+`scripts/package.js` rather than by the CLI's internal package compiler, because
+this repository requires a byte-reproducible artifact: entries are emitted in
+sorted order with a pinned DOS timestamp, fixed permissions, and no directory
+entries, and `npm run package` gates on two consecutive runs producing identical
+bytes. The output shape is the same two-entry archive the official packager
+writes, and `scripts/certification-audit.js` asserts that.
 
 ## Microsoft AppSource submission assets
 
