@@ -29,3 +29,14 @@ jobs:
       # loadability gate actually executes in CI.
       - run: npm test -- tests/packaging.test.ts
       - run: npm audit
+      # Publish the built .pbiviz so its hash can be verified by download-and-rehash rather
+      # than trusted from a report. A reported hash goes stale the moment another change
+      # merges; the artifact is ground truth for the commit that produced it. Only reached
+      # when every gate above has passed, so a published artifact is always a validated one.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atlyn-cohort-retention-pbiviz
+          path: |
+            dist/atlyn-cohort-retention.pbiviz
+            dist/package-metadata.json
+          if-no-files-found: error

@@ -250,6 +250,13 @@ describe("clean visual package metadata", () => {
     // case during CI's first `npm test`. Without a post-package run the loadability gate would
     // silently never execute in CI.
     expect(workflow).toMatch(/npm run package[\s\S]*npm test -- tests\/packaging\.test\.ts/);
+    // The packaged artifact must be downloadable, so its hash can be verified by
+    // download-and-rehash instead of trusted from a point-in-time report that goes stale
+    // behind later merges.
+    expect(workflow).toContain("actions/upload-artifact");
+    expect(workflow).toContain("dist/atlyn-cohort-retention.pbiviz");
+    expect(workflow).toContain("dist/package-metadata.json");
+    expect(workflow).toContain("if-no-files-found: error");
   });
 });
 
