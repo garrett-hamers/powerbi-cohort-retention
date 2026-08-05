@@ -14,7 +14,7 @@ const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), 
 const metadataPath = path.join(root, "dist", "package-metadata.json");
 const publicationMetadataPath = path.join(root, "dist", "publication-readiness.json");
 const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
-const expectedGuid = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+const expectedGuid = "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11";
 const stylesheetSource = fs.readFileSync(path.join(root, "style", "visual.less"), "utf8");
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const ICON_SIZE = 20;
@@ -493,6 +493,50 @@ assert(
     ]),
   "dist contains stale or missing generated artifacts"
 );
+
+/**
+ * The GUID cascades through pbiviz.json, the packaged manifest and resource entry name, the
+ * plugin registration, the sample report's `CustomVisuals/<GUID>/` tree, `resourcePackages`, and
+ * `visualType`. A single missed occurrence would leave the sample report binding a visual the
+ * package no longer registers, which nothing else here would catch. The previous GUID was the
+ * hyphenated UUID this one preserves, so it must not appear anywhere except the two documents
+ * that record the change deliberately.
+ */
+const PREVIOUS_GUID = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+const HISTORICAL_GUID_DOCUMENTS = new Set([
+  "CHANGELOG.md",
+  path.join("docs", "partner-center-submission.md"),
+  // This file, which has to name the value in order to forbid it.
+  path.join("scripts", "certification-audit.js")
+]);
+
+function listRepositoryFiles(directory = "") {
+  const skip = new Set(["node_modules", "dist", ".git", ".tmp", "coverage"]);
+  return fs
+    .readdirSync(path.join(root, directory), { withFileTypes: true })
+    .flatMap((entry) => {
+      if (skip.has(entry.name)) return [];
+      const relativePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) return listRepositoryFiles(relativePath);
+      return entry.isFile() ? [relativePath] : [];
+    });
+}
+
+for (const relativePath of listRepositoryFiles()) {
+  if (HISTORICAL_GUID_DOCUMENTS.has(relativePath)) continue;
+  if (/\.(png|pbiviz|ico|zip)$/i.test(relativePath)) continue;
+  const contents = fs.readFileSync(path.join(root, relativePath), "utf8");
+  assert(
+    !contents.toLowerCase().includes(PREVIOUS_GUID),
+    `${relativePath} still references the previous visual GUID ${PREVIOUS_GUID}`
+  );
+  const bareHex = PREVIOUS_GUID.replace(/-/g, "");
+  const strayHex = new RegExp(`(?<!atlynCohortRetention)${bareHex}`, "i").test(contents);
+  assert(
+    !strayHex,
+    `${relativePath} contains the bare GUID hex outside the ${expectedGuid} identifier`
+  );
+}
 
 JSZip.loadAsync(fs.readFileSync(packagePath))
  .then(async (archive) => {

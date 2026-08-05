@@ -218,12 +218,14 @@ official packager, read directly from the installed
 
 `content.js` is the real `dist/visual.js` bundle plus a plugin registration.
 
-> **Known deviation.** The official plugin template emits
-> `var <pluginName> = {...}`, which is a syntax error for this project because its
-> GUID is a hyphenated UUID rather than the `name + uppercase hyphenless UUID`
-> form `pbiviz new` generates. The generator therefore registers with bracket
-> notation, `powerbi.visuals.plugins["<GUID>"] = {...}`, which is valid JavaScript
-> and semantically identical. See the GUID risk section of
+> **Deviation from the official template.** The official plugin template declares
+> `var <pluginName>: IVisualPlugin = {...}` and then registers it as
+> `powerbi.visuals.plugins["<pluginName>"] = <pluginName>;`. The generator writes the
+> object literal straight into the bracket assignment, skipping the intermediate
+> `var` binding, because this registration is emitted as JavaScript rather than
+> compiled from TypeScript. The registry key is a bracketed string literal in both.
+> The GUID is `name + uppercase hyphenless UUID`, the form `pbiviz new` generates, so
+> it is a valid JavaScript identifier either way. See the GUID format section of
 > `docs/partner-center-submission.md`.
 
 `tests/sample-report.test.ts` evaluates the generated `content.js` in JSDOM,

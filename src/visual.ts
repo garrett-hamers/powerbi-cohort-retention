@@ -21,7 +21,7 @@ import IVisualHost = powerbi.extensibility.visual.IVisualHost;
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
 
-export const VISUAL_GUID = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+export const VISUAL_GUID = "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11";
 
 type SelectionManager = ReturnType<IVisualHost["createSelectionManager"]>;
 type SelectionId = ReturnType<

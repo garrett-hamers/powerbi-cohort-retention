@@ -1,5 +1,21 @@
 # Contributing
 
+## Windows: enable long paths first
+
+The sample report embeds the visual under
+`samples/AtlynSample.Report/CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json`. The GUID is 51
+characters and appears twice in that path, so with a deep clone directory the full path exceeds
+the legacy Windows `MAX_PATH` limit of 260 and git fails with `Filename too long` on `git add`.
+Node reads and writes the file fine; only git's default configuration trips.
+
+```text
+git config --global core.longpaths true
+```
+
+Linux and macOS are unaffected, as is CI.
+
+## Gates
+
 Run the repository gates before submitting a change:
 
 ```text

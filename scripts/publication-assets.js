@@ -40,7 +40,7 @@ const RESERVED_TLDS = ["example", "invalid", "test", "localhost"];
 function buildOwnerActions(version) {
   return [
     "Open samples/atlyn-cohort-retention-sample.pbip in Power BI Desktop, confirm the visual renders and the data refreshes with no credential prompt, then File > Save As > Power BI report (.pbix) and upload that .pbix to Partner Center. The PBIP is generated and validated in this repository; the .pbix conversion cannot be done headlessly because a .pbix model is a binary Analysis Services backup image.",
-    "Confirm during that Desktop step that Power BI accepts the hyphenated visual GUID. The official tooling generates GUIDs that are valid JavaScript identifiers, and this one is not; see the GUID risk section of docs/partner-center-submission.md.",
+    "Confirm during that Desktop step that the visual loads under the GUID atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11. It is now in the format the official tooling generates (name + uppercase hyphenless UUID), replacing the earlier hyphenated UUID; see the GUID format section of docs/partner-center-submission.md.",
     "Create or confirm the Microsoft Partner Center account and the Power BI visual offer, configured as a FREE offer with no paid or transactable billing.",
     "Paste the privacy policy URL, support URL, and EULA into the Partner Center offer listing, and upload the logo and screenshots.",
     `Re-publish the release manifest and the Azure Blob artifact under the version-keyed path cohort-retention/${version}/atlyn-cohort-retention.pbiviz, because the packaged .pbiviz bytes changed and must not be published under an already-distributed version number.`
