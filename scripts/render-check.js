@@ -438,6 +438,13 @@ function checkHeaderBands(fixtureId, measurement, report) {
     `${fixtureId}: nested header bands stack instead of collapsing onto one another ` +
       `(tops [${bands.join(", ")}])`
   );
+  // Distinctness alone would accept bands stacked in the wrong order. Under scroll each
+  // band has to sit strictly below the one above it, in document order.
+  report.check(
+    measurement.bands.every((value, index) => index === 0 || value > measurement.bands[index - 1]),
+    `${fixtureId}: header band tops increase strictly in document order ` +
+      `(tops [${bands.join(", ")}])`
+  );
 }
 
 async function main() {

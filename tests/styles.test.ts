@@ -228,6 +228,47 @@ describe("markup the stylesheet depends on", () => {
 
   afterEach(() => document.body.replaceChildren());
 
+  /**
+   * jsdom has no layout engine: every `getBoundingClientRect()` returns zeros, so the
+   * offsets the visual writes are all `0px` here no matter what the code does. Asserting
+   * only that each cell has *an* offset is therefore worthless — `0px` for every band is
+   * exactly the collapsed state this code exists to prevent, and it would pass.
+   *
+   * Feeding the method real geometry is what makes the assertion mean something: stub the
+   * header rows' rects, then require the offsets it derives to be distinct and strictly
+   * increasing.
+   */
+  function stubHeaderRowGeometry(rowHeight: number): () => void {
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element): DOMRect {
+      const parent = this.parentElement;
+      if (this.tagName === "TR" && parent?.tagName === "THEAD") {
+        const top = Array.prototype.indexOf.call(parent.children, this) * rowHeight;
+        return {
+          top,
+          bottom: top + rowHeight,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: rowHeight,
+          x: 0,
+          y: top,
+          toJSON: () => ({})
+        } as DOMRect;
+      }
+      return original.call(this);
+    };
+    return () => {
+      Element.prototype.getBoundingClientRect = original;
+    };
+  }
+
+  function headerBandOffsets(element: HTMLElement): string[][] {
+    return Array.from(element.querySelectorAll("thead tr")).map((band) =>
+      Array.from(band.querySelectorAll<HTMLElement>("th")).map((cell) => cell.style.top)
+    );
+  }
+
   test("tags the corner header so the corner rule can target it", () => {
     const corner = render(1).querySelector("thead th");
     expect(corner).not.toBeNull();
@@ -242,17 +283,41 @@ describe("markup the stylesheet depends on", () => {
     });
   });
 
-  test("assigns an explicit sticky offset to every nested header band", () => {
-    // Two bands both resting on `top: 0` collapse onto each other when scrolled, so the
-    // visual measures and writes a per-band offset.
-    const element = render(2);
-    const bands = element.querySelectorAll("thead tr");
-    expect(bands.length).toBe(2);
-    bands.forEach((band) => {
-      const cells = band.querySelectorAll<HTMLElement>("th");
-      expect(cells.length).toBeGreaterThan(0);
-      cells.forEach((cell) => expect(cell.style.top).toMatch(/^\d+px$/));
+  test("stacks nested header bands at distinct, strictly increasing offsets", () => {
+    const rowHeight = 24;
+    const restore = stubHeaderRowGeometry(rowHeight);
+    let offsets: string[][];
+    try {
+      offsets = headerBandOffsets(render(2));
+    } finally {
+      restore();
+    }
+
+    expect(offsets).toHaveLength(2);
+    offsets.forEach((band) => expect(band.length).toBeGreaterThan(0));
+
+    // Every cell in a band shares that band's offset.
+    offsets.forEach((band) => expect(new Set(band).size).toBe(1));
+
+    const bandOffsets = offsets.map((band) => {
+      expect(band[0]).toMatch(/^\d+px$/);
+      return Number.parseInt(band[0], 10);
     });
+    // The point of the whole mechanism: two bands both resting on `top: 0` collapse onto
+    // each other under scroll. All-zero offsets are the bug, not a pass.
+    expect(new Set(bandOffsets).size).toBe(bandOffsets.length);
+    bandOffsets.forEach((offset, index) => {
+      if (index > 0) expect(offset).toBeGreaterThan(bandOffsets[index - 1]);
+    });
+    expect(bandOffsets).toEqual([0, rowHeight]);
+  });
+
+  test("writes no misleading offset when the host reports no geometry", () => {
+    // Real jsdom: all rects are zero, so there is no measurable band separation. The
+    // method must still leave a consistent, non-crashing state rather than inventing one.
+    const offsets = headerBandOffsets(render(2));
+    expect(offsets).toHaveLength(2);
+    offsets.flat().forEach((offset) => expect(offset).toBe("0px"));
   });
 });
 
