@@ -5,6 +5,8 @@ const {
   NOT_VERIFIABLE,
   STALE_CSS,
   STALE_JS,
+  applicableFreshnessRules,
+  describeCheckedRules,
   findStalePackagedContent,
   formatStaleArtifactError,
   packagedCssMatchesSource
@@ -127,6 +129,32 @@ describe("stale packaged artifact guard", () => {
     ).toEqual([NOT_VERIFIABLE]);
   });
 
+  test("names the rules that could not run, not files that may have been readable", () => {
+    // The CSS branch blamed `style/visual.less` whenever EITHER side was missing, so
+    // supplying only the stylesheet reported that the stylesheet could not be read while
+    // holding it. The verdict was right — nothing was compared — but the attribution was
+    // not, and a message that is only correct because its input is currently unreachable
+    // is a message that goes wrong quietly the first time someone makes it reachable.
+    const [problem] = findStalePackagedContent({ stylesheetSource: "a{b:c}" });
+    expect(problem.kind).toBe(NOT_VERIFIABLE);
+    expect(problem.message).toContain("the CSS rule");
+    expect(problem.message).toContain("the JS rule");
+    // A rule needs both sides, so naming one file asserts something about which side was
+    // missing — which is exactly what it got wrong.
+    expect(problem.message).not.toMatch(/style\/visual\.less (and|could not be read)/);
+    expect(problem.message).not.toContain("could not be read");
+  });
+
+  test("uses the same vocabulary on both paths", () => {
+    // The success line names rules (`content.css`); the refusal named files. One
+    // mechanism described two ways depending on which path you land on is how a reader
+    // ends up thinking they are two mechanisms.
+    const refusal = findStalePackagedContent({})[0].message;
+    expect(refusal).toContain("content.css");
+    expect(refusal).toContain("content.js");
+    expect(describeCheckedRules([STALE_CSS, STALE_JS])).toBe("content.css, content.js");
+  });
+
   test("says cannot-verify rather than stale, because the fix is different", () => {
     // Telling someone to re-package when the stylesheet is missing sends them somewhere
     // the problem is not.
@@ -153,8 +181,56 @@ describe("stale packaged artifact guard", () => {
   });
 });
 
-describe("the guard is wired into the render check", () => {
-  test("runs before anything is measured", () => {
+describe("the success message names what was actually compared", () => {
+  const stylesheet = ".atlyn-cohort-visual {\n  position: relative;\n}\n";
+  const bundle = "var AtlynCohortRetention = {};\n";
+
+  test("reports both rules only when both could run", () => {
+    expect(
+      applicableFreshnessRules({
+        packagedCss: stylesheet,
+        stylesheetSource: stylesheet,
+        packagedJs: `${bundle}// registration`,
+        bundleSource: bundle
+      })
+    ).toEqual([STALE_CSS, STALE_JS]);
+  });
+
+  test("reports only the CSS rule when dist/visual.js is unreadable", () => {
+    // Routine here rather than hypothetical: `gh run download` puts the .pbiviz into
+    // dist/ without visual.js, so the CSS rule is the only one that can run. A hardcoded
+    // "(content.css, content.js)" would claim a comparison that never happened — the
+    // guard's own false-assurance shape, one layer up in the reporting.
+    expect(
+      applicableFreshnessRules({ packagedCss: stylesheet, stylesheetSource: stylesheet })
+    ).toEqual([STALE_CSS]);
+  });
+
+  test("reports nothing when no rule could run", () => {
+    // The guard already refuses in this state; this just keeps the two consistent.
+    expect(applicableFreshnessRules({})).toEqual([]);
+  });
+
+  test("names the content each rule covers, not the rule's internal kind", () => {
+    // "matches the current sources (stale-css)" would read like a defect report inside a
+    // success message.
+    expect(describeCheckedRules([STALE_CSS])).toBe("content.css");
+    expect(describeCheckedRules([STALE_CSS, STALE_JS])).toBe("content.css, content.js");
+    expect(describeCheckedRules([])).toBe("");
+  });
+
+  test("the render check derives the message instead of hardcoding it", () => {
+    const check = fs.readFileSync(path.join(root, "scripts", "render-check.js"), "utf8");
+    expect(check).toContain("describeCheckedRules(");
+    expect(check).toContain("applicableFreshnessRules(");
+    // The hardcoded form is what stated both rules had run on a partial verification.
+    expect(check).not.toContain(
+      "Packaged content matches the current sources (content.css, content.js)."
+    );
+  });
+});
+
+describe("the guard is wired into the render check", () => {  test("runs before anything is measured", () => {
     const check = fs.readFileSync(path.join(root, "scripts", "render-check.js"), "utf8");
     expect(check).toContain("assertPackagedContentIsFresh");
     expect(check).toContain("findStalePackagedContent");
@@ -166,6 +242,33 @@ describe("the guard is wired into the render check", () => {
     expect(guardAt).toBeGreaterThan(-1);
     expect(harnessAt).toBeGreaterThan(-1);
     expect(guardAt).toBeLessThan(harnessAt);
+  });
+
+  test("imports every freshness helper it uses", () => {
+    // The wiring tests above match strings, so they cannot catch a name used but never
+    // imported. That is not hypothetical: while adding the message change,
+    // `describeCheckedRules` reached the log line without reaching the require, every
+    // string assertion still passed, and `npm run render:check` died with a
+    // ReferenceError before rendering anything.
+    //
+    // The general form is the transferable part: a test that asserts "the script calls X"
+    // by grepping for `X` verifies text, not wiring.
+    const check = fs.readFileSync(path.join(root, "scripts", "render-check.js"), "utf8");
+    const freshness = require("../scripts/package-freshness");
+
+    const destructured = /const \{([^}]*)\} = require\("\.\/package-freshness"\)/.exec(check);
+    expect(destructured).not.toBeNull();
+    const imported = destructured![1]
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    expect(imported.length).toBeGreaterThan(0);
+    imported.forEach((name) => expect(Object.keys(freshness)).toContain(name));
+
+    // And every helper the file calls is one it imported.
+    Object.keys(freshness)
+      .filter((name) => typeof freshness[name] === "function" && check.includes(`${name}(`))
+      .forEach((name) => expect(imported).toContain(name));
   });
 
   test("still refuses to run at all when the package is missing", () => {

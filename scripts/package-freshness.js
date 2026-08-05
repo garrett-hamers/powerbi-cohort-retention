@@ -76,10 +76,19 @@ function packagedCssMatchesSource(packagedCss, stylesheetSource) {
  * This matters most where only one rule can apply. A repo whose packager does not build
  * `content.js` as `bundle + registration` can only use the CSS rule, and there "no
  * evidence" is one unreadable file away rather than two.
+ *
+ * The refusal names the RULES that could not run, not the files. A rule needs both sides
+ * — the packaged content and the source — and naming a file asserts something specific
+ * about which side was missing. It got that wrong: the CSS branch blamed
+ * `style/visual.less` whenever EITHER side was absent, so
+ * `findStalePackagedContent({ stylesheetSource })` reported that `style/visual.less`
+ * could not be read while holding it. The verdict was right and the attribution was not.
+ * Naming the rule is true in every case, and matches the vocabulary the success message
+ * uses, so one mechanism is not described two ways depending on which path you land on.
  */
 function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, bundleSource } = {}) {
   const problems = [];
-  const unreadable = [];
+  const couldNotRun = [];
   let concluded = 0;
 
   if (typeof packagedCss === "string" && typeof stylesheetSource === "string") {
@@ -93,7 +102,7 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
       });
     }
   } else {
-    unreadable.push("style/visual.less");
+    couldNotRun.push("the CSS rule (content.css against style/visual.less)");
   }
 
   if (typeof packagedJs === "string" && typeof bundleSource === "string") {
@@ -109,19 +118,52 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
       });
     }
   } else {
-    unreadable.push("dist/visual.js");
+    couldNotRun.push("the JS rule (content.js against dist/visual.js)");
   }
 
   if (concluded === 0) {
     problems.push({
       kind: NOT_VERIFIABLE,
       message:
-        `no freshness rule could run: ${unreadable.join(" and ")} could not be read, so ` +
+        `no freshness rule could run: ${couldNotRun.join(" and ")} had no inputs, so ` +
         "nothing was compared against the packaged content"
     });
   }
 
   return problems;
+}
+
+/**
+ * Which freshness rules could run against a given set of inputs.
+ *
+ * Kept as its own pure function rather than returned from `findStalePackagedContent`,
+ * which deliberately returns a plain problem array so no caller can read past the
+ * refusal. This answers a different question — not "is anything wrong?" but "what was
+ * actually compared?" — and only the success message needs it.
+ *
+ * That message needs it because a hardcoded list lies about a partial run. With only
+ * `style/visual.less` readable, printing "(content.css, content.js)" claims a comparison
+ * that never happened, which is the same false-assurance shape the guard exists to
+ * prevent, surviving one layer up in the reporting. The partial case is routine here:
+ * `gh run download` puts the `.pbiviz` into `dist/` without `visual.js`, so the CSS rule
+ * is the only one that can run.
+ */
+function applicableFreshnessRules({ packagedCss, stylesheetSource, packagedJs, bundleSource } = {}) {
+  const rules = [];
+  if (typeof packagedCss === "string" && typeof stylesheetSource === "string") rules.push(STALE_CSS);
+  if (typeof packagedJs === "string" && typeof bundleSource === "string") rules.push(STALE_JS);
+  return rules;
+}
+
+/** What each rule compares, for messages where the internal kind would read oddly. */
+const RULE_LABELS = {
+  [STALE_CSS]: "content.css",
+  [STALE_JS]: "content.js"
+};
+
+/** Names the content a set of rule kinds covers, e.g. "content.css, content.js". */
+function describeCheckedRules(rules) {
+  return rules.map((kind) => RULE_LABELS[kind] ?? kind).join(", ");
 }
 
 /**
@@ -163,6 +205,8 @@ module.exports = {
   NOT_VERIFIABLE,
   STALE_CSS,
   STALE_JS,
+  applicableFreshnessRules,
+  describeCheckedRules,
   findStalePackagedContent,
   formatStaleArtifactError,
   normalize,

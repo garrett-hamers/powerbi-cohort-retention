@@ -23,7 +23,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { withHarness, delay } = require("./headless-browser");
 const { readPackagedVisual, root } = require("./packaged-visual");
-const { findStalePackagedContent, formatStaleArtifactError } = require("./package-freshness");
+const {
+  applicableFreshnessRules,
+  describeCheckedRules,
+  findStalePackagedContent,
+  formatStaleArtifactError
+} = require("./package-freshness");
 
 const WIDTH = 1366;
 const HEIGHT = 768;
@@ -538,7 +543,7 @@ function assertPackagedContentIsFresh(packaged) {
   const stylesheetPath = path.join(root, "style", "visual.less");
   const bundlePath = path.join(root, "dist", "visual.js");
 
-  const problems = findStalePackagedContent({
+  const sources = {
     packagedCss: packaged.css,
     stylesheetSource: fs.existsSync(stylesheetPath) ? fs.readFileSync(stylesheetPath, "utf8") : undefined,
     packagedJs: packaged.js,
@@ -546,7 +551,9 @@ function assertPackagedContentIsFresh(packaged) {
     // the JS rule is skipped rather than reported — but if NO rule can run, the guard
     // reports that instead of returning an empty list the caller would read as fresh.
     bundleSource: fs.existsSync(bundlePath) ? fs.readFileSync(bundlePath, "utf8") : undefined
-  });
+  };
+
+  const problems = findStalePackagedContent(sources);
 
   if (problems.length > 0) {
     const error = new Error(
@@ -557,7 +564,17 @@ function assertPackagedContentIsFresh(packaged) {
     error.expected = true;
     throw error;
   }
-  console.log("Packaged content matches the current sources (content.css, content.js).");
+
+  // Names what was actually compared rather than assuming both rules ran. Hardcoding the
+  // full list would state a comparison that never happened whenever only one rule could
+  // run — the same false assurance the guard prevents, one layer up in the reporting.
+  // The partial case is routine: `gh run download` puts the .pbiviz into dist/ without
+  // visual.js, leaving the CSS rule as the only one able to run.
+  console.log(
+    `Packaged content matches the current sources (${describeCheckedRules(
+      applicableFreshnessRules(sources)
+    )}).`
+  );
 }
 
 async function main() {
