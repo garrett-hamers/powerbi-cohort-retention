@@ -5,7 +5,8 @@ const {
   STALE_CSS,
   STALE_JS,
   findStalePackagedContent,
-  formatStaleArtifactError
+  formatStaleArtifactError,
+  packagedCssMatchesSource
 } = require("../scripts/package-freshness");
 
 const root = path.resolve(__dirname, "..");
@@ -139,5 +140,36 @@ describe("the guard is wired into the render check", () => {
     // should print the fix, not a stack trace.
     expect(reader).toContain("npm run package");
     expect(reader).toContain("error.expected = true");
+  });
+});
+
+describe("one definition of 'the packaged CSS matches the stylesheet'", () => {
+  // The certification audit already had this comparison; it just sat behind
+  // `npm run package`, which is the step whose omission causes the staleness. Both call
+  // sites now share the rule so they cannot drift into disagreeing.
+  test("the certification audit uses the shared predicate", () => {
+    const audit = fs.readFileSync(path.join(root, "scripts", "certification-audit.js"), "utf8");
+    expect(audit).toContain('require("./package-freshness")');
+    expect(audit).toContain("packagedCssMatchesSource(packagedCss, stylesheetSource)");
+    // The open-coded comparison must be gone, or there would be two rules again.
+    expect(audit).not.toContain("packagedCss === stylesheetSource");
+  });
+
+  test("is byte-identical, never whitespace-stripped", () => {
+    // The audit's OTHER comparison strips whitespace to prove the stylesheet is still
+    // already-valid CSS. Its two sides are legitimately different sizes — on a current
+    // tree, 5,167 raw against 5,088 compiled — so borrowing that rule here would accept a
+    // stale artifact whose whitespace happened to normalise the same.
+    expect(packagedCssMatchesSource("a {\n  b: c;\n}\n", "a{b:c}")).toBe(false);
+    expect(packagedCssMatchesSource("a { b: c; }", "a {  b:  c;  }")).toBe(false);
+
+    const freshness = fs.readFileSync(path.join(root, "scripts", "package-freshness.js"), "utf8");
+    expect(freshness).not.toContain("stripWhitespace");
+    expect(freshness).not.toMatch(/replace\(\/\\s\+\/g/);
+  });
+
+  test("normalises only line endings, matching how the packager builds content.css", () => {
+    expect(packagedCssMatchesSource("a {\n}\n", "a {\r\n}\r\n")).toBe(true);
+    expect(packagedCssMatchesSource("a {\n}\n", "a {\n}\n")).toBe(true);
   });
 });
