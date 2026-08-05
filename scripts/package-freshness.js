@@ -76,10 +76,19 @@ function packagedCssMatchesSource(packagedCss, stylesheetSource) {
  * This matters most where only one rule can apply. A repo whose packager does not build
  * `content.js` as `bundle + registration` can only use the CSS rule, and there "no
  * evidence" is one unreadable file away rather than two.
+ *
+ * The refusal names the RULES that could not run, not the files. A rule needs both sides
+ * — the packaged content and the source — and naming a file asserts something specific
+ * about which side was missing. It got that wrong: the CSS branch blamed
+ * `style/visual.less` whenever EITHER side was absent, so
+ * `findStalePackagedContent({ stylesheetSource })` reported that `style/visual.less`
+ * could not be read while holding it. The verdict was right and the attribution was not.
+ * Naming the rule is true in every case, and matches the vocabulary the success message
+ * uses, so one mechanism is not described two ways depending on which path you land on.
  */
 function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, bundleSource } = {}) {
   const problems = [];
-  const unreadable = [];
+  const couldNotRun = [];
   let concluded = 0;
 
   if (typeof packagedCss === "string" && typeof stylesheetSource === "string") {
@@ -93,7 +102,7 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
       });
     }
   } else {
-    unreadable.push("style/visual.less");
+    couldNotRun.push("the CSS rule (content.css against style/visual.less)");
   }
 
   if (typeof packagedJs === "string" && typeof bundleSource === "string") {
@@ -109,14 +118,14 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
       });
     }
   } else {
-    unreadable.push("dist/visual.js");
+    couldNotRun.push("the JS rule (content.js against dist/visual.js)");
   }
 
   if (concluded === 0) {
     problems.push({
       kind: NOT_VERIFIABLE,
       message:
-        `no freshness rule could run: ${unreadable.join(" and ")} could not be read, so ` +
+        `no freshness rule could run: ${couldNotRun.join(" and ")} had no inputs, so ` +
         "nothing was compared against the packaged content"
     });
   }

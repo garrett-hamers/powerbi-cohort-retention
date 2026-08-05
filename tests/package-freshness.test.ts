@@ -129,6 +129,32 @@ describe("stale packaged artifact guard", () => {
     ).toEqual([NOT_VERIFIABLE]);
   });
 
+  test("names the rules that could not run, not files that may have been readable", () => {
+    // The CSS branch blamed `style/visual.less` whenever EITHER side was missing, so
+    // supplying only the stylesheet reported that the stylesheet could not be read while
+    // holding it. The verdict was right — nothing was compared — but the attribution was
+    // not, and a message that is only correct because its input is currently unreachable
+    // is a message that goes wrong quietly the first time someone makes it reachable.
+    const [problem] = findStalePackagedContent({ stylesheetSource: "a{b:c}" });
+    expect(problem.kind).toBe(NOT_VERIFIABLE);
+    expect(problem.message).toContain("the CSS rule");
+    expect(problem.message).toContain("the JS rule");
+    // A rule needs both sides, so naming one file asserts something about which side was
+    // missing — which is exactly what it got wrong.
+    expect(problem.message).not.toMatch(/style\/visual\.less (and|could not be read)/);
+    expect(problem.message).not.toContain("could not be read");
+  });
+
+  test("uses the same vocabulary on both paths", () => {
+    // The success line names rules (`content.css`); the refusal named files. One
+    // mechanism described two ways depending on which path you land on is how a reader
+    // ends up thinking they are two mechanisms.
+    const refusal = findStalePackagedContent({})[0].message;
+    expect(refusal).toContain("content.css");
+    expect(refusal).toContain("content.js");
+    expect(describeCheckedRules([STALE_CSS, STALE_JS])).toBe("content.css, content.js");
+  });
+
   test("says cannot-verify rather than stale, because the fix is different", () => {
     // Telling someone to re-package when the stylesheet is missing sends them somewhere
     // the problem is not.
