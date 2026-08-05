@@ -201,7 +201,9 @@ function measureExpression(scrollTop, scrollLeft) {
       stack = {
         point: point,
         columnHeaderZ: getComputedStyle(columnHeader).zIndex,
+        columnHeaderPosition: getComputedStyle(columnHeader).position,
         rowHeaderZ: getComputedStyle(rowHeader).zIndex,
+        rowHeaderPosition: getComputedStyle(rowHeader).position,
         cornerZ: corner ? getComputedStyle(corner).zIndex : null,
         cornerLeft: corner ? getComputedStyle(corner).left : null,
         cornerPosition: corner ? getComputedStyle(corner).position : null,
@@ -360,10 +362,31 @@ function checkStickyCorner(fixtureId, measurement, report) {
     return;
   }
   console.log(
-    `  sticky corner: column header z ${stack.columnHeaderZ}, row header z ${stack.rowHeaderZ}, ` +
+    `  sticky corner: column header z ${stack.columnHeaderZ} (${stack.columnHeaderPosition}), ` +
+      `row header z ${stack.rowHeaderZ} (${stack.rowHeaderPosition}), ` +
       `corner z ${stack.cornerZ} (position ${stack.cornerPosition}, left ${stack.cornerLeft})`
   );
   console.log(`  paints at the intersection: ${stack.hit} (owner ${stack.owner})`);
+
+  /**
+   * PRECONDITION for the z-index comparisons below.
+   *
+   * `z-index` only applies to positioned elements, but `getComputedStyle().zIndex` returns
+   * the specified value regardless — an unpositioned `thead th` still computes `3`. So the
+   * ordering assertions read "column headers paint above row headers" from a stacking
+   * context that does not exist, and pass while the headers do not stick at all. Measured:
+   * with `position: static` on `thead th`, the two checks below both pass on `z 3 > z 2`.
+   */
+  for (const [subject, position] of [
+    ["column headers are", stack.columnHeaderPosition],
+    ["row headers are", stack.rowHeaderPosition],
+    ["the corner label is", stack.cornerPosition]
+  ]) {
+    report.check(
+      position === "sticky",
+      `${fixtureId}: ${subject} positioned, so their z-index applies (position ${position})`
+    );
+  }
 
   report.check(
     Number(stack.columnHeaderZ) > Number(stack.rowHeaderZ),
