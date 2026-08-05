@@ -118,7 +118,6 @@ function buildVisualPackage(pbiviz, capabilities) {
     style: "style/visual.less",
     stringResources: readStringResources(),
     capabilities,
-    dependencies: null,
     content: {
       js: `${bundle}${pluginRegistration(pbiviz)}`,
       css,
@@ -128,6 +127,14 @@ function buildVisualPackage(pbiviz, capabilities) {
     externalJS: [],
     assets: { icon: "assets/icon.png" }
   };
+
+  // The official packager derives `dependencies` from a dependencies file and simply omits the
+  // key when there is none, because `JSON.stringify` drops `undefined`. `pbiviz.json` declares
+  // `null` here, which would serialize as an explicit `"dependencies": null` and is the only
+  // structural difference from a package built by `pbiviz package`. Keep the shapes identical.
+  if (pbiviz.dependencies !== null && pbiviz.dependencies !== undefined) {
+    definition.dependencies = pbiviz.dependencies;
+  }
 
   return { descriptor, definition };
 }

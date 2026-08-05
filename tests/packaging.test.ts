@@ -19,10 +19,19 @@ describe("packaged .pbiviz is loadable by a host", () => {
   const hasPackage = fs.existsSync(packagePath);
   const maybe = hasPackage ? test : test.skip;
 
-  async function loadPackage(): Promise<{ manifest: any; definition: any; names: string[] }> {
+  async function loadPackage(): Promise<{
+    manifest: any;
+    definition: any;
+    names: string[];
+    directories: string[];
+  }> {
     const archive = await JSZip.loadAsync(fs.readFileSync(packagePath));
     const names = Object.values(archive.files)
       .filter((entry: any) => !entry.dir)
+      .map((entry: any) => entry.name)
+      .sort();
+    const directories = Object.values(archive.files)
+      .filter((entry: any) => entry.dir)
       .map((entry: any) => entry.name)
       .sort();
     const manifest = JSON.parse(await archive.file("package.json")!.async("string"));
@@ -30,7 +39,7 @@ describe("packaged .pbiviz is loadable by a host", () => {
       (entry: any) => entry.resourceId === manifest.metadata.pbivizjson.resourceId
     );
     const definition = JSON.parse(await archive.file(declared.file)!.async("string"));
-    return { manifest, definition, names };
+    return { manifest, definition, names, directories };
   }
 
   maybe("contains exactly the manifest and the resource it points at", async () => {
@@ -42,6 +51,31 @@ describe("packaged .pbiviz is loadable by a host", () => {
     expect(declared.file).toBe(`resources/${guid}.pbiviz.json`);
     expect(declared.sourceType).toBe(5);
     expect(manifest.visual.guid).toBe(guid);
+  });
+
+  maybe("matches the shape pbiviz package produces", async () => {
+    // Verified against a real package built by the official `pbiviz package` CLI: the manifest
+    // and resource key sets and the resources/ directory entry are identical.
+    const { manifest, definition, directories } = await loadPackage();
+    expect(directories).toEqual(["resources/"]);
+    expect(Object.keys(manifest).sort()).toEqual(
+      ["author", "metadata", "resources", "version", "visual"]
+    );
+    expect(Object.keys(definition).sort()).toEqual(
+      [
+        "apiVersion",
+        "assets",
+        "author",
+        "capabilities",
+        "content",
+        "externalJS",
+        "stringResources",
+        "style",
+        "visual",
+        "visualEntryPoint"
+      ]
+    );
+    expect(Object.keys(definition.content).sort()).toEqual(["css", "iconBase64", "js"]);
   });
 
   maybe("carries non-empty CSS in the resource the host reads", async () => {

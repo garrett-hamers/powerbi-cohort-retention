@@ -496,23 +496,28 @@ assert(
 
 JSZip.loadAsync(fs.readFileSync(packagePath))
  .then(async (archive) => {
-   const allEntries = Object.values(archive.files);
-   assert(
-     allEntries.every((entry) => !entry.dir),
-     "the package must contain no zip directory entries; they differ by zip producer and break cross-platform determinism"
-   );
-   const packageFiles = allEntries
+   const fileEntries = Object.values(archive.files)
      .filter((entry) => !entry.dir)
      .map((entry) => entry.name.replace(/^(\.\/)+/, ""))
      .sort();
+   const directoryEntries = Object.values(archive.files)
+     .filter((entry) => entry.dir)
+     .map((entry) => entry.name)
+     .sort();
+
    // A .pbiviz holds exactly the manifest and the resource it points at, NOT the source tree.
+   // `pbiviz package` also emits the `resources/` directory entry, so this matches it exactly.
    assert(
-     JSON.stringify(packageFiles) ===
+     JSON.stringify(fileEntries) ===
        JSON.stringify(["package.json", resourceEntryName(expectedGuid)].sort()),
-     `the .pbiviz must contain exactly package.json and ${resourceEntryName(expectedGuid)}; found ${packageFiles.join(", ")}`
+     `the .pbiviz must contain exactly package.json and ${resourceEntryName(expectedGuid)}; found ${fileEntries.join(", ")}`
    );
    assert(
-     JSON.stringify(packageFiles) === JSON.stringify(metadata.packageFiles.slice().sort()),
+     JSON.stringify(directoryEntries) === JSON.stringify(["resources/"]),
+     `the .pbiviz must carry exactly the resources/ directory entry that pbiviz package emits; found ${JSON.stringify(directoryEntries)}`
+   );
+   assert(
+     JSON.stringify(fileEntries) === JSON.stringify(metadata.packageFiles.slice().sort()),
      "package file entries do not match package metadata"
    );
 
