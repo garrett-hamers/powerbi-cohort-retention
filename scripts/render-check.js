@@ -344,15 +344,23 @@ function checkRowHeaders(fixtureId, measurement, report) {
       `(${pinnedToScrollportTop} found; row headers must stick to the inline start only)`
   );
 
-  report.check(
+  // PRECONDITION for the `top` assertion below. `getComputedStyle().top` is `auto` on a
+  // static element too, so on a non-sticky row header that assertion would print a PASS
+  // about a property that does not apply — next to the genuine failure, where it costs
+  // interpretation time exactly when someone is diagnosing. The gate was already correct
+  // because this check fails first; making the read conditional stops the misleading line
+  // from printing at all.
+  const rowHeaderIsSticky = report.check(
     measurement.rowHeader.position === "sticky" && measurement.rowHeader.left === "0px",
     `${fixtureId}: row headers still stick horizontally ` +
       `(position ${measurement.rowHeader.position}, left ${measurement.rowHeader.left})`
   );
-  report.check(
-    measurement.rowHeader.top === "auto",
-    `${fixtureId}: row headers declare no vertical sticky offset (top ${measurement.rowHeader.top})`
-  );
+  if (rowHeaderIsSticky) {
+    report.check(
+      measurement.rowHeader.top === "auto",
+      `${fixtureId}: row headers declare no vertical sticky offset (top ${measurement.rowHeader.top})`
+    );
+  }
 }
 
 function checkStickyCorner(fixtureId, measurement, report) {
