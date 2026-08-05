@@ -83,21 +83,40 @@ is separate and gates nothing in this visual.
 npm run brand:assets   # regenerate the icon and the 300x300 logo
 npm run build          # required before capturing screenshots or building the sample
 npm run screenshots    # capture the submission screenshots
+npm run render:check   # render the built visual + real stylesheet and check its geometry
 npm run sample:report  # regenerate the offline sample report
 ```
+
+`npm run render:check` is the layout gate, and it answers a different question from the
+certification audit. The audit proves the stylesheet **ships**: that `content.css` is
+non-empty, matches `style/visual.less`, and is still already-valid CSS. It cannot say
+whether the rules are **correct**. Three sticky-header defects and a caption-containment
+defect lived in rules that shipped perfectly and were simply wrong, and were only
+visible as geometry in a real engine.
+
+So this drives the real bundle and the real stylesheet in headless Chromium and fails if
+anything paints outside the visual's clipped bounds, if the screen-reader-only caption
+becomes visible or its containing block escapes the visual, if a diagnostics strip
+slices its own text, if the sticky header bands pile up or collapse under two-axis
+scroll, or if keyboard focus or selection break. It needs a local browser, so it is a
+local gate rather than a CI step; the rules it depends on are pinned in
+`tests/styles.test.ts`, which does run in CI.
 
 `scripts/generate-brand-assets.js` encodes both PNGs with nothing but Node's
 built-in `zlib`, so re-running it reproduces the same bytes.
 
-`scripts/capture-screenshots.js` serves the repository over loopback with
+`scripts/capture-screenshots.js` and `scripts/render-check.js` share the browser
+plumbing in `scripts/headless-browser.js`: it serves the repository over loopback with
 `node:http`, launches the locally installed Chromium-based browser with
 `--headless=new`, and drives it over the Chrome DevTools Protocol using Node's
-built-in `WebSocket`. It loads the real `dist/visual.js` and `style/visual.less`
+built-in `WebSocket`. Both load the real `dist/visual.js` and `style/visual.less`
 into `tools/screenshot-harness/index.html` against a mock Power BI host and the
-deterministic offline fixtures in `scripts/submission-fixtures.js`, then captures
-at exactly 1366x768. Set `CHROME_PATH` if no browser is found automatically. No
-npm dependency is added for this, and CI never needs a browser because the
-screenshots are committed artifacts that CI only validates.
+deterministic offline fixtures in `scripts/submission-fixtures.js`; the screenshot
+script then captures at exactly 1366x768. The shared driver refuses to proceed unless
+the stylesheet actually parsed, so neither tool can measure or capture an unstyled
+render. Set `CHROME_PATH` if no browser is found automatically. No npm dependency is
+added for this, and CI never needs a browser because the screenshots are committed
+artifacts that CI only validates.
 
 `scripts/generate-sample-report.js` builds the offline sample report as a native
 Power BI Project (PBIP) with a PBIR report definition and a TMDL semantic model.

@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+- **Fixed three sticky-header defects and a caption-containment defect in
+  `style/visual.less`.** These were dormant while the packaged `.pbiviz` was a flat
+  source-tree archive that the host never read. Fixing the package layout made the
+  stylesheet ship for the first time, which made all four live in the current build.
+  They were found by rendering the built visual with the real stylesheet in headless
+  Chromium and measuring geometry (`npm run render:check`), not by inspecting the CSS.
+  - **Row headers piled up at the top of the scrollport.** `.atlyn-matrix th` set
+    `position: sticky; top: 0`, which also matched every `tbody` row header, so
+    scrolling down pinned all the cohort labels to the top and stacked them on top of
+    one another over the period headers. Measured row-header tops went from
+    `[100, 100, 100, 100, 100, 124]` to `[139, 176, 213, 250, 287, 324]`. Sticky
+    positioning is now scoped to `thead th`.
+  - **Nested column-header bands collapsed onto one another.** Expanding the Period
+    hierarchy renders more than one band and every band rested on `top: 0`. Measured
+    band tops went from `[167, 167]` to `[167, 196]`. `src/visual.ts` now measures and
+    writes a per-band sticky offset, and tags the corner cell `atlyn-corner`.
+  - **Row headers painted over the column-header band they scroll under.** Hit-testing
+    the sticky corner returned a `tbody` cell. The bands are now ordered
+    corner > column headers > row headers.
+  - **The screen-reader-only `<caption>` escaped the visual.** It carries the accessible
+    name as real text, and its containing block was the page rather than the visual
+    (`offsetParent` was `<body>`), so neither the visual's `overflow: hidden` nor the
+    matrix scrollport could clip it and it did not scroll with the matrix it labels. Its
+    hiding pattern was also incomplete — no `clip-path`, and `white-space: normal`, so a
+    long label could reflow inside the 1px box. `.atlyn-cohort-visual` is now
+    `position: relative` and the caption uses the complete pattern.
+- Added `npm run render:check`, which renders the built visual with the real stylesheet
+  in headless Chromium and fails if anything paints outside the visual's clipped bounds,
+  if the caption becomes visible or escapes its container, if a diagnostics strip slices
+  its own text, if the sticky bands misbehave under two-axis scroll, or if keyboard focus
+  or selection break. The certification audit proves the stylesheet *ships*; this proves
+  it is *correct*. It needs a local browser, so it is a local gate rather than a CI step.
+- Extracted the headless-browser plumbing shared by `npm run screenshots` and
+  `npm run render:check` into `scripts/headless-browser.js`. It refuses to proceed unless
+  the stylesheet actually parsed, so neither tool can measure or capture an unstyled
+  render.
+- Added `tests/styles.test.ts`, which pins the specific declarations that were wrong by
+  applying the **packaged** `content.css` in jsdom and reading the resolved cascade, so
+  specificity and source order are exercised rather than matched as text. Seven of its
+  nine assertions fail against the pre-fix stylesheet.
+
 - **Changed the visual GUID to `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`**, from the
   hyphenated UUID `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11`. The new value **preserves the original
   UUID exactly** — `D9F6B5A21F844B6DA0F78C2C4E2E6A11` is the same hex with the hyphens removed and

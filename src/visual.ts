@@ -213,6 +213,9 @@ export class Visual implements IVisual {
       if (level === 0) {
         const corner = document.createElement("th");
         corner.scope = "col";
+        // Targeted by `.atlyn-matrix thead th.atlyn-corner`, which pins the corner to
+        // the inline start and lifts it above both sticky header bands.
+        corner.className = "atlyn-corner";
         corner.rowSpan = maxLevel + 1;
         corner.textContent = this.labels.cohort;
         corner.setAttribute("aria-label", this.labels.cohort);
@@ -284,6 +287,28 @@ export class Visual implements IVisual {
       head.appendChild(headerRow);
     }
     this.tableElement.appendChild(head);
+    this.applyStickyHeaderOffsets(head);
+  }
+
+  /**
+   * Gives each column-header band its own sticky offset.
+   *
+   * Every band declares `top: 0` in the stylesheet, which is correct while there is
+   * only one. As soon as the Period hierarchy is expanded there are two or more bands,
+   * and they would all stick at 0 and collapse onto the first the moment the matrix is
+   * scrolled. The offsets can only come from measurement, so this reads layout once per
+   * render and only when there is more than one band.
+   */
+  private applyStickyHeaderOffsets(head: HTMLTableSectionElement): void {
+    const rows = Array.from(head.rows);
+    if (rows.length <= 1) return;
+    const base = rows[0].getBoundingClientRect().top;
+    for (const row of rows) {
+      const offset = Math.max(0, Math.round(row.getBoundingClientRect().top - base));
+      for (const cell of Array.from(row.cells)) {
+        cell.style.top = `${offset}px`;
+      }
+    }
   }
 
   private columnHeaderRowCount(model: CohortModel): number {
