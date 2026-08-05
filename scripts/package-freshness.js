@@ -125,6 +125,39 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
 }
 
 /**
+ * Which freshness rules could run against a given set of inputs.
+ *
+ * Kept as its own pure function rather than returned from `findStalePackagedContent`,
+ * which deliberately returns a plain problem array so no caller can read past the
+ * refusal. This answers a different question — not "is anything wrong?" but "what was
+ * actually compared?" — and only the success message needs it.
+ *
+ * That message needs it because a hardcoded list lies about a partial run. With only
+ * `style/visual.less` readable, printing "(content.css, content.js)" claims a comparison
+ * that never happened, which is the same false-assurance shape the guard exists to
+ * prevent, surviving one layer up in the reporting. The partial case is routine here:
+ * `gh run download` puts the `.pbiviz` into `dist/` without `visual.js`, so the CSS rule
+ * is the only one that can run.
+ */
+function applicableFreshnessRules({ packagedCss, stylesheetSource, packagedJs, bundleSource } = {}) {
+  const rules = [];
+  if (typeof packagedCss === "string" && typeof stylesheetSource === "string") rules.push(STALE_CSS);
+  if (typeof packagedJs === "string" && typeof bundleSource === "string") rules.push(STALE_JS);
+  return rules;
+}
+
+/** What each rule compares, for messages where the internal kind would read oddly. */
+const RULE_LABELS = {
+  [STALE_CSS]: "content.css",
+  [STALE_JS]: "content.js"
+};
+
+/** Names the content a set of rule kinds covers, e.g. "content.css, content.js". */
+function describeCheckedRules(rules) {
+  return rules.map((kind) => RULE_LABELS[kind] ?? kind).join(", ");
+}
+
+/**
  * The message is the point. It must name the artifact, the mismatch, and the fix, and it
  * must not read like a defect in the visual — otherwise it recreates the confusion it
  * exists to prevent.
@@ -163,6 +196,8 @@ module.exports = {
   NOT_VERIFIABLE,
   STALE_CSS,
   STALE_JS,
+  applicableFreshnessRules,
+  describeCheckedRules,
   findStalePackagedContent,
   formatStaleArtifactError,
   normalize,
