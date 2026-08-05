@@ -16,10 +16,16 @@ const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
 
 async function readPackagedVisual(archivePath = packagePath) {
   if (!fs.existsSync(archivePath)) {
-    throw new Error(
-      `${path.relative(root, archivePath)} is missing. Run \`node scripts/package.js\` first; ` +
-        "the render check deliberately refuses to fall back to the source tree."
+    const error = new Error(
+      `${path.relative(root, archivePath)} is missing.\n\n` +
+        "Run `npm run package` and re-run this check.\n\n" +
+        "The render check deliberately refuses to fall back to the source tree: it exists to\n" +
+        "measure the bytes Power BI actually loads, and the source tree is a different artifact."
     );
+    // Operator mistake with a known fix, not a crash. The entry point prints the
+    // instructions instead of a stack trace.
+    error.expected = true;
+    throw error;
   }
 
   const archive = await JSZip.loadAsync(fs.readFileSync(archivePath));

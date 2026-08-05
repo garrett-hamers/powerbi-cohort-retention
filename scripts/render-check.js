@@ -19,8 +19,11 @@
  * Usage: node scripts/package.js && npm run render:check
  */
 
+const fs = require("node:fs");
+const path = require("node:path");
 const { withHarness, delay } = require("./headless-browser");
-const { readPackagedVisual } = require("./packaged-visual");
+const { readPackagedVisual, root } = require("./packaged-visual");
+const { findStalePackagedContent, formatStaleArtifactError } = require("./package-freshness");
 
 const WIDTH = 1366;
 const HEIGHT = 768;
@@ -447,12 +450,47 @@ function checkHeaderBands(fixtureId, measurement, report) {
   );
 }
 
+/**
+ * Refuses to measure an archive that was not built from the current sources.
+ *
+ * `npm run build` refreshes `dist/visual.js` but leaves the `.pbiviz` alone, so running
+ * this check without `npm run package` measures stale bytes and reports real geometry for
+ * the wrong content — a false positive shaped exactly like a layout defect. The rules
+ * live in scripts/package-freshness.js as pure functions so they can be tested against
+ * deliberately mismatched input.
+ */
+function assertPackagedContentIsFresh(packaged) {
+  const stylesheetPath = path.join(root, "style", "visual.less");
+  const bundlePath = path.join(root, "dist", "visual.js");
+
+  const problems = findStalePackagedContent({
+    packagedCss: packaged.css,
+    stylesheetSource: fs.existsSync(stylesheetPath) ? fs.readFileSync(stylesheetPath, "utf8") : undefined,
+    packagedJs: packaged.js,
+    // Absent only when the tree was never built. That is not evidence of staleness, so
+    // the JS rule is skipped rather than reported.
+    bundleSource: fs.existsSync(bundlePath) ? fs.readFileSync(bundlePath, "utf8") : undefined
+  });
+
+  if (problems.length > 0) {
+    const error = new Error(
+      formatStaleArtifactError(path.relative(root, packaged.archivePath), problems)
+    );
+    // Marks this as an actionable operator error so the entry point prints the
+    // instructions rather than a stack trace.
+    error.expected = true;
+    throw error;
+  }
+  console.log("Packaged content matches the current sources (content.css, content.js).");
+}
+
 async function main() {
   const packaged = await readPackagedVisual();
   console.log(
     `Packaged artifact: ${packaged.archivePath} (${packaged.sizeBytes} bytes, ` +
       `guid ${packaged.guid}, version ${packaged.version})`
   );
+  assertPackagedContentIsFresh(packaged);
   console.log(
     `Rendering content.js (${Buffer.byteLength(packaged.js)} bytes) with content.css ` +
       `(${Buffer.byteLength(packaged.css)} bytes) — both read out of the .pbiviz.`
@@ -509,6 +547,9 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error.stack ?? error.message ?? error);
+  // A stale artifact or a missing package is an operator mistake with a known fix, not a
+  // crash. Printing a stack trace over the instructions buries them and makes it look
+  // like the tool broke, which is the confusion this whole check exists to avoid.
+  console.error(error.expected ? error.message : error.stack ?? error.message ?? error);
   process.exitCode = 1;
 });
