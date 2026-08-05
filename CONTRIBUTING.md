@@ -35,6 +35,12 @@ Chromium and refuses to fall back to the source tree. It is the only gate that o
 layout, because jsdom performs no layout — sticky positioning, z-index stacking, and
 containing-block resolution are invisible to `npm test`.
 
+`npm run build` writes `dist/visual.js` and never rebuilds the `.pbiviz`, so building and
+then rendering would exercise the *previous* package and report a pass on bytes that no
+longer match your edit. `scripts/packaged-visual.js` refuses to load a package whose
+`content.css` or `content.js` predates the current `style/visual.less` or `dist/visual.js`,
+and names which one is stale.
+
 **If your change alters the packaged bytes**, the recorded hashes and byte sizes in
 `docs/partner-center-submission.md` and `CHANGELOG.md` must move with them.
 `scripts/doc-hash-gate.js` enforces this from inside `npm run package`: it hashes the

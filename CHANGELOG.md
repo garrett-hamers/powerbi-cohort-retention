@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **`npm run render:check` no longer renders a stale package.** It reads `content.js` and
+  `content.css` out of `dist/atlyn-cohort-retention.pbiviz`, but `npm run build` writes only
+  `dist/visual.js` and never rebuilds that archive. Editing a source file and running just the
+  build therefore left the check exercising the *previous* package and reporting a pass on
+  bytes that no longer corresponded to the source. Reproduced before fixing:
+  `style/visual.less` at 5,207 bytes on disk while the check rendered the stale 5,167-byte
+  `content.css` and reported `PASS … 31 rules parsed`.
+- `scripts/certification-audit.js` already compared `content.css` with `style/visual.less`,
+  but only inside `npm run package`, which rebuilds the archive first — so it structurally
+  could not fire in the one situation where staleness bites. The guard now lives in
+  `scripts/packaged-visual.js`, where the packaged bytes are actually read, so every consumer
+  inherits it rather than a second copy of the logic being grown alongside the first.
+- It names the stale input — `style/visual.less` or `dist/visual.js` — and says which command
+  to run. `content.js` is the bundle plus the appended plugin registration, so the bundle is
+  matched as a prefix; requiring equality would make every healthy package look stale.
+  `tests/stale-package.test.ts` covers both stale inputs, both together, the healthy case,
+  and that prefix rule.
+
 - **Closed the recorded-hash gap.** The packaged `.pbiviz` SHA-256 and byte size, and the
   icon, logo, and screenshot hashes, are quoted in `docs/partner-center-submission.md` and
   in this file, and nothing verified any of them. A stale value did not fail the build — it
