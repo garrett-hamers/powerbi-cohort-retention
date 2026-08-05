@@ -205,7 +205,7 @@ is still a query. A calculated table is evaluated by the engine, so there is
 nothing to authenticate, no credential prompt, and no refresh dependency. There is
 deliberately no `dataSources.tmdl` and no `expressions.tmdl`.
 
-### Definition versions must be 4.0
+### Definition versions: three different fields, three different rules
 
 `definition.pbir` and `definition.pbism` both declare `"version": "4.0"`. Microsoft
 documents that version `1.0` means the definition is stored in the single legacy
@@ -223,6 +223,38 @@ values are single named constants in `scripts/generate-sample-report.js`, and te
 assert they are at least 4 and that no stale `model.bim` or `report.json` exists to
 shadow the folders.
 
+`definition/version.json` is a **different field with a different rule** and must not
+be changed to match the two above. The published
+`versionMetadata/1.0.0` schema constrains it to:
+
+```
+pattern: ^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$
+description: format is major.minor.patch - major >=1, minor >=0, patch always 0
+```
+
+`"4.0"` has only two components and fails that pattern, so the sample declares
+`"2.0.0"`.
+
+### Schema URLs must name a version Microsoft actually publishes
+
+Nothing fetches a `$schema` URL at open time, so a plausible-looking but unpublished
+version fails silently until the definition itself is rejected or mis-parsed. The
+report definition previously claimed `report/2.4.0`, which does not exist —
+[microsoft/json-schemas](https://github.com/microsoft/json-schemas) publishes
+`1.0.0 1.1.0 1.2.0 1.3.0 2.0.0 2.1.0 3.0.0 3.1.0 3.2.0 3.3.0`, so the sequence jumps
+`2.1.0 → 3.0.0`. The sample now targets `report/2.1.0`, the newest 2.x.
+
+`scripts/fabric-schemas.js` holds a checked-in snapshot of every published version per
+schema family. `scripts/certification-audit.js` and `tests/sample-report.test.ts` fail
+the build if any sample part names a version outside that snapshot, and
+`npm run schemas:verify` re-queries GitHub and reports drift. The gate stays offline so
+a GitHub outage can never fail a release.
+
+`report.json` also declares `themeCollection`, which the report schema lists as
+**required** and which Power BI Desktop refuses a report definition without.
+`reportVersionAtImport` is a plain string in the 1.x and 2.x schemas; it only becomes
+an object at 3.x.
+
 PBIR and TMDL are documented by Microsoft as **preview** features. Opening and
 re-saving the project requires the matching preview options in Power BI Desktop
 under **File > Options and settings > Options > Preview features**.
@@ -230,9 +262,13 @@ under **File > Options and settings > Options > Preview features**.
 ### Required one-time manual step
 
 1. Open `samples/AtlynSample.pbip` in Power BI Desktop.
-2. Confirm the visual renders and the data loads **with no credential prompt**.
+2. Confirm the visual renders **with data**. If any table shows as empty or Desktop
+   reports "Some of the tables have incomplete or no data," run
+   **Home > Refresh > Schema and data** before saving.
 3. **File → Save As → Power BI report (.pbix)**.
-4. Upload that `.pbix` to Partner Center as the sample report.
+4. If Desktop ever prompts for credentials, something external has crept into the
+   model — stop and investigate rather than entering anything.
+5. Upload that `.pbix` to Partner Center as the sample report.
 
 > **This project has not been opened in Power BI Desktop from this repository.**
 > Every automated assertion is structural, plus a functional JSDOM check of the
@@ -287,8 +323,61 @@ the one-time Power BI Desktop step above, before submitting.
 | Visual version | `1.0.1.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` |
-| Size | 20,899 bytes |
+| SHA-256 | `dc732f837be1c849f55b9ac4c997f0270c5c4c4f7ac32993bda9b229ef972c54` |
+| Size | 24,047 bytes |
+| Packaged `visual.css` | 4,898 bytes |
+
+Every CI run prints these to the job log and the run summary, and uploads the exact
+`.pbiviz` as the `atlyn-cohort-retention-pbiviz` workflow artifact, so the file the
+owner uploads to Azure Blob is never ambiguous. `npm run package` runs the build three
+times and fails unless all three produce identical bytes.
+
+### The visual ships a compiled stylesheet
+
+`pbiviz.json` declares `"style": "style/visual.less"`, but that field is only honoured
+by the official `pbiviz package` command, which this repository does not use — it
+packages through `scripts/package.js`. Until this was fixed, nothing imported the
+stylesheet, `webpack.config.js` had only a `ts-loader` rule, and **every rule in
+`style/visual.less` was dead**: the packaged visual shipped with no CSS at all.
+
+The pipeline is now explicit end to end:
+
+| Step | Where |
+| --- | --- |
+| Side-effect import pulls the stylesheet into the module graph | `src/visual.ts`, typed by `src/styles.d.ts` |
+| `less-loader` → `css-loader` → `mini-css-extract-plugin` emits `dist/visual.css` | `webpack.config.js` |
+| The compiled CSS is copied into the package next to `visual.js` | `scripts/package.js`, `scripts/package-manifest.js` |
+| The packaged bytes are asserted non-empty and to contain the root rule | `scripts/certification-audit.js` |
+| The rules themselves are asserted | `tests/styles.test.ts` |
+| The rendered result is asserted in a real browser | `npm run render:check` |
+
+`url()` and `@import` resolution are disabled in `css-loader` so the stylesheet can
+never pull an external asset into a visual that must be self-contained. The raw
+`style/visual.less` is still packaged as well, because `pbiviz.json` names it.
+
+### Bugs the missing stylesheet was hiding
+
+Shipping the CSS made three latent defects reachable for the first time. All three were
+found by rendering the built visual with the compiled stylesheet in headless Chromium
+(`npm run render:check`) and are covered by `tests/styles.test.ts`:
+
+1. **Row headers piled up at the top of the scrollport.** `.atlyn-matrix th` set
+   `position: sticky; top: 0`, which also matched every `tbody` row header. Scrolling
+   down stacked all the cohort labels on top of one another in the top-left corner.
+   Sticky positioning is now scoped to `thead th`.
+2. **Nested column-header bands collapsed onto each other.** Expanding the Period
+   hierarchy renders more than one header band, and every band rested on `top: 0`.
+   `src/visual.ts` now measures and writes a per-band sticky offset.
+3. **Row headers painted over the column-header band.** Row headers carried a higher
+   `z-index` than the column headers they scroll under. The bands are now ordered
+   corner > column headers > row headers.
+
+The screen-reader-only `<caption>`, which carries the visual's accessible name as real
+text, was also relying on an incomplete hiding pattern. Its containing block was the
+page rather than the visual (`offsetParent` was `<body>`), so neither the visual's
+`overflow: hidden` nor the matrix scrollport could clip it and it did not scroll with
+the matrix it labels. `.atlyn-cohort-visual` is now `position: relative` and the caption
+uses the complete pattern including `clip-path` and `white-space: nowrap`.
 
 The packaged filename carries no version segment — `scripts/package.js` writes a fixed
 `dist/atlyn-cohort-retention.pbiviz` — so only the version-keyed storefront path changes.
@@ -388,9 +477,12 @@ records the resolved submission fields, asset hashes and dimensions, an empty
 These cannot be completed from this repository.
 
 1. **Convert the sample report to `.pbix`.** Open `samples/AtlynSample.pbip` in
-   Power BI Desktop, confirm the visual renders and the data loads with **no
-   credential prompt**, then **File → Save As → Power BI report (.pbix)**. The PBIP
-   is generated and validated here; the `.pbix` conversion cannot be done
+   Power BI Desktop, then confirm the visual renders **with data**. If any table
+   shows as empty or Desktop reports "Some of the tables have incomplete or no data,"
+   run **Home > Refresh > Schema and data** before saving. Then
+   **File → Save As → Power BI report (.pbix)**. If Desktop ever prompts for
+   credentials, something external has crept into the model — stop and investigate.
+   The PBIP is generated and validated here; the `.pbix` conversion cannot be done
    headlessly, and `pbi-tools compile` is broken against the installed Desktop
    version. See [section 8b](#8b-sample-report-offline).
 2. **Confirm Power BI Desktop accepts the hyphenated visual GUID** during step 1.

@@ -2,6 +2,62 @@
 
 ## 1.0.1.0
 
+- **Fixed: the visual shipped with no CSS at all.** `pbiviz.json` declared
+  `"style": "style/visual.less"`, but that field is only honoured by the official
+  `pbiviz package` command, which this repository does not use. No source file imported
+  the stylesheet and `webpack.config.js` had only a `ts-loader` rule, so the LESS never
+  entered the module graph, was never compiled, and never reached the package — every
+  rule in it was dead. `src/visual.ts` now imports it (typed by `src/styles.d.ts`),
+  `webpack.config.js` compiles it through `less-loader` → `css-loader` →
+  `mini-css-extract-plugin` into `dist/visual.css`, and `scripts/package.js` ships that
+  file next to `visual.js`. `scripts/certification-audit.js` fails the build unless the
+  packaged CSS is present, non-empty, and contains the visual's root rule.
+- **Fixed three latent bugs the missing stylesheet was hiding**, all found by rendering
+  the built visual with the compiled stylesheet in headless Chromium
+  (`npm run render:check`):
+  - Row headers piled up at the top of the scrollport on vertical scroll, because
+    `.atlyn-matrix th { position: sticky; top: 0 }` also matched every `tbody` row
+    header. Sticky positioning is now scoped to `thead th`.
+  - Nested column-header bands collapsed onto one another, because every band rested on
+    `top: 0`. `src/visual.ts` now measures and writes a per-band sticky offset.
+  - Row headers painted over the column-header band they scroll under. The sticky bands
+    are now ordered corner > column headers > row headers.
+- **Fixed the screen-reader-only `<caption>` escaping the visual.** It carries the
+  accessible name as real text and relied on an incomplete visually-hidden pattern; its
+  containing block was the page rather than the visual, so neither the visual's
+  `overflow: hidden` nor the matrix scrollport clipped it and it did not scroll with the
+  matrix it labels. `.atlyn-cohort-visual` is now `position: relative` and the caption
+  uses `clip-path: inset(50%)` and `white-space: nowrap`.
+- **Fixed the sample report's `$schema`.** `definition/report.json` claimed report
+  schema `2.4.0`, which Microsoft does not publish — the published sequence is
+  `1.0.0 1.1.0 1.2.0 1.3.0 2.0.0 2.1.0 3.0.0 3.1.0 3.2.0 3.3.0` and jumps
+  `2.1.0 → 3.0.0`. It now targets `2.1.0`, the newest 2.x.
+- **Fixed the missing `themeCollection`.** It is a required property of the report
+  schema and Power BI Desktop refuses a report definition without it.
+- **Fixed `definition/version.json`.** It declared `"4.0"`, which fails the published
+  `versionMetadata/1.0.0` pattern `^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$` ("major.minor.patch,
+  patch always 0"). It is now `"2.0.0"`. `definition.pbir` and `definition.pbism` keep
+  `"4.0"`: those are different fields that select the PBIR and TMDL folder formats.
+- Added `scripts/fabric-schemas.js`, a checked-in snapshot of every schema version
+  published by `microsoft/json-schemas`. The certification audit and
+  `tests/sample-report.test.ts` fail if any sample part names a version outside it, and
+  `npm run schemas:verify` re-queries GitHub and reports drift. The gate stays offline so
+  a GitHub outage can never fail a release.
+- Added `npm run render:check`, which renders the built visual with the compiled
+  stylesheet in headless Chromium and asserts that nothing paints outside the visual's
+  bounds, the caption stays hidden and contained, diagnostics text is not sliced, sticky
+  header bands behave under two-axis scroll, and keyboard focus and selection work.
+- The screenshot harness and `npm run screenshots` now load `dist/visual.css` instead of
+  the raw LESS, and refuse to capture unless it loaded — so a submission screenshot can
+  never again be taken from an unstyled render.
+- The sample report's embedded `content.css` is now the compiled stylesheet rather than
+  the LESS source, matching what `powerbi-visuals-webpack-plugin` stores. Power BI
+  injects `content.css` verbatim.
+- CI uploads `dist/*.pbiviz` as a workflow artifact and prints the packaged filename,
+  SHA-256, byte size, and packaged CSS size to the run log and job summary.
+- Documented conditional Power BI Desktop guidance: refresh only if a table shows as
+  empty or Desktop reports incomplete data, and treat any credential prompt as a signal
+  that something external has entered the model.
 - **Bumped the visual version from `1.0.0.0` to `1.0.1.0`** (`pbiviz.json` `visual.version`,
   `package.json` `1.0.1`). The GUID `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` is unchanged.
 - **This release supersedes the v1.0.0.0 storefront artifact.** The owner's storefront is

@@ -39,7 +39,7 @@ const RESERVED_TLDS = ["example", "invalid", "test", "localhost"];
 /** Requirements only the account owner can satisfy outside this repository. */
 function buildOwnerActions(version) {
   return [
-    "Open samples/atlyn-cohort-retention-sample.pbip in Power BI Desktop, confirm the visual renders and the data refreshes with no credential prompt, then File > Save As > Power BI report (.pbix) and upload that .pbix to Partner Center. The PBIP is generated and validated in this repository; the .pbix conversion cannot be done headlessly because a .pbix model is a binary Analysis Services backup image.",
+    "Open samples/AtlynSample.pbip in Power BI Desktop, then confirm the visual renders with data. If any table shows as empty or Desktop reports \"Some of the tables have incomplete or no data,\" run Home > Refresh > Schema and data before saving. Then File > Save As > Power BI report (.pbix) and upload that .pbix to Partner Center. If Desktop ever prompts for credentials, something external has crept into the model - stop and investigate. The PBIP is generated and validated in this repository; the .pbix conversion cannot be done headlessly because a .pbix model is a binary Analysis Services backup image.",
     "Confirm during that Desktop step that Power BI accepts the hyphenated visual GUID. The official tooling generates GUIDs that are valid JavaScript identifiers, and this one is not; see the GUID risk section of docs/partner-center-submission.md.",
     "Create or confirm the Microsoft Partner Center account and the Power BI visual offer, configured as a FREE offer with no paid or transactable billing.",
     "Paste the privacy policy URL, support URL, and EULA into the Partner Center offer listing, and upload the logo and screenshots.",

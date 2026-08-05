@@ -60,6 +60,31 @@ internal package compiler is not used as the package producer because its
 generated plugin uses UUIDs as JavaScript identifiers; the repository retains the
 valid stable UUID and applies the equivalent source/package gates locally.
 
+### The stylesheet
+
+`src/visual.ts` imports `style/visual.less` for its side effect, which is what puts
+the stylesheet into the webpack module graph. `webpack.config.js` compiles it through
+`less-loader` → `css-loader` → `mini-css-extract-plugin` and emits `dist/visual.css`,
+and `scripts/package.js` ships that compiled file inside the `.pbiviz`.
+
+This import is load-bearing, not decorative. The `style` field in `pbiviz.json` is only
+honoured by the official `pbiviz package` command, which this repository does not use,
+so without the import nothing compiles the LESS and the visual ships with no CSS at
+all. `scripts/certification-audit.js` asserts the packaged CSS is present, non-empty,
+and contains the visual's root rule; `tests/styles.test.ts` asserts the individual
+rules that layout and accessibility depend on.
+
+```text
+npm run render:check   # render the built visual + compiled CSS in a headless browser
+```
+
+`npm run render:check` is the layout gate. It drives the real bundle and the real
+compiled stylesheet in headless Chromium and fails if anything paints outside the
+visual's bounds, if the screen-reader-only caption becomes visible or escapes its
+container, if a diagnostics strip slices its own text, if the sticky header bands
+misbehave under two-axis scroll, or if keyboard focus or selection break. It needs a
+local browser, so it is a local gate rather than a CI step.
+
 ## Microsoft AppSource submission assets
 
 `docs/partner-center-submission.md` is the submission dossier: it records every
@@ -89,12 +114,15 @@ built-in `zlib`, so re-running it reproduces the same bytes.
 `scripts/capture-screenshots.js` serves the repository over loopback with
 `node:http`, launches the locally installed Chromium-based browser with
 `--headless=new`, and drives it over the Chrome DevTools Protocol using Node's
-built-in `WebSocket`. It loads the real `dist/visual.js` and `style/visual.less`
-into `tools/screenshot-harness/index.html` against a mock Power BI host and the
-deterministic offline fixtures in `scripts/submission-fixtures.js`, then captures
-at exactly 1366x768. Set `CHROME_PATH` if no browser is found automatically. No
-npm dependency is added for this, and CI never needs a browser because the
-screenshots are committed artifacts that CI only validates.
+built-in `WebSocket` (shared with `npm run render:check` via
+`scripts/headless-browser.js`). It loads the real `dist/visual.js` and the real
+compiled `dist/visual.css` into `tools/screenshot-harness/index.html` against a mock
+Power BI host and the deterministic offline fixtures in
+`scripts/submission-fixtures.js`, then captures at exactly 1366x768. The driver
+refuses to proceed unless the stylesheet actually loaded, so a screenshot can never be
+captured from an unstyled render. Set `CHROME_PATH` if no browser is found
+automatically. No npm dependency is added for this, and CI never needs a browser
+because the screenshots are committed artifacts that CI only validates.
 
 `scripts/generate-sample-report.js` builds the offline sample report as a native
 Power BI Project (PBIP) with a PBIR report definition and a TMDL semantic model.

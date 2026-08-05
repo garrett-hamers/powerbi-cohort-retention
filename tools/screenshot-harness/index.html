@@ -3,7 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <title>Atlyn Cohort Retention screenshot harness</title>
-    <link rel="stylesheet" href="/style/visual.less" />
+    <!--
+      The COMPILED stylesheet, which is what actually ships inside the .pbiviz. Loading
+      style/visual.less here instead would test something the product does not have.
+    -->
+    <link rel="stylesheet" href="/dist/visual.css" />
     <style>
       html,
       body {

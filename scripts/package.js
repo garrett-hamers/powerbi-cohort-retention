@@ -42,6 +42,26 @@ function normalizeTimestamps(directory) {
   }
 }
 
+/**
+ * The compiled stylesheet is the artifact that actually styles the visual. If webpack
+ * ever stops emitting it — a dropped less rule, a removed side-effect import — the
+ * package would silently ship unstyled again, which is exactly the regression this
+ * guards. Fail loudly at package time rather than shipping dead styles.
+ */
+function assertCompiledStylesheet() {
+  const stylesheet = path.join(dist, "visual.css");
+  if (!fs.existsSync(stylesheet)) {
+    throw new Error(
+      "dist/visual.css is missing. src/visual.ts must import style/visual.less and " +
+        "webpack.config.js must keep the less-loader/css-loader chain."
+    );
+  }
+  const contents = fs.readFileSync(stylesheet, "utf8");
+  if (contents.trim().length === 0) {
+    throw new Error("dist/visual.css is empty; the stylesheet compiled to nothing.");
+  }
+}
+
 async function normalizePackage() {
   const source = await JSZip.loadAsync(fs.readFileSync(output));
   const normalized = new JSZip();
@@ -99,6 +119,8 @@ async function main() {
     copy(path.join(root, "pbiviz.json"), path.join(staging, "pbiviz.json"));
     copy(path.join(root, "capabilities.json"), path.join(staging, "capabilities.json"));
     copy(path.join(root, "style", "visual.less"), path.join(staging, "style", "visual.less"));
+    assertCompiledStylesheet();
+    copy(path.join(dist, "visual.css"), path.join(staging, "visual.css"));
     copy(path.join(dist, "visual.js"), path.join(staging, "visual.js"));
     copy(path.join(root, "assets", "icon.png"), path.join(staging, "assets", "icon.png"));
     fs.cpSync(path.join(root, "stringResources"), path.join(staging, "stringResources"), {

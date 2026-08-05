@@ -3,6 +3,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 const JSZip = require("jszip");
 const { getSourceManifest } = require("./package-manifest");
+const {
+  REQUIRED_REPORT_PROPERTIES,
+  VERSION_METADATA_PATTERN,
+  findUnpublishedSchemaReferences
+} = require("./fabric-schemas");
 
 const root = path.resolve(__dirname, "..");
 const pbiviz = readJson("pbiviz.json");
@@ -54,6 +59,28 @@ assert(
   "the full ESLint gate is not configured"
 );
 assert(packageScript.includes("utimesSync"), "package timestamps are not normalized");
+
+// The stylesheet only reaches the package because src/visual.ts imports it and webpack
+// compiles it. pbiviz.json's `style` field is inert here: it is read by the official
+// `pbiviz package` command, which this repository does not use.
+const visualSource = fs.readFileSync(path.join(root, "src", "visual.ts"), "utf8");
+const webpackConfig = fs.readFileSync(path.join(root, "webpack.config.js"), "utf8");
+assert(
+  /import\s+["']\.[./]*\/style\/visual\.less["']/.test(visualSource),
+  "src/visual.ts must import style/visual.less or no CSS enters the module graph"
+);
+assert(
+  webpackConfig.includes("less-loader") && webpackConfig.includes("css-loader"),
+  "webpack.config.js must keep the less-loader/css-loader chain"
+);
+assert(
+  webpackConfig.includes("mini-css-extract-plugin") && webpackConfig.includes('filename: "visual.css"'),
+  "webpack.config.js must extract the stylesheet to dist/visual.css"
+);
+assert(
+  packageScript.includes('copy(path.join(dist, "visual.css")'),
+  "scripts/package.js must copy the compiled stylesheet into the package"
+);
 
 const mapping = capabilities.dataViewMappings?.[0]?.matrix;
 assert(mapping?.rows?.dataReductionAlgorithm?.window?.count === 500, "row reduction must be 500");
@@ -221,10 +248,29 @@ for (const relativePath of [
 
 // Microsoft documents definition version "1.0" as meaning the definition lives in the
 // single legacy file. The exploded definition/ folders require "4.0" or higher.
+//
+// definition/version.json is a DIFFERENT field governed by the published
+// versionMetadata/1.0.0 schema, which requires major.minor.patch with patch always 0.
+// "4.0" is legal for the two folder-format selectors below and illegal there.
 const samplePbir = JSON.parse(fs.readFileSync(path.join(sampleReport, "definition.pbir"), "utf8"));
 const samplePbism = JSON.parse(fs.readFileSync(path.join(sampleModel, "definition.pbism"), "utf8"));
 assert(Number(samplePbir.version) >= 4, "definition.pbir must declare version 4.0 or higher for PBIR");
 assert(Number(samplePbism.version) >= 4, "definition.pbism must declare version 4.0 or higher for TMDL");
+
+const sampleVersionMetadata = JSON.parse(
+  fs.readFileSync(path.join(sampleReport, "definition", "version.json"), "utf8")
+);
+assert(
+  VERSION_METADATA_PATTERN.test(sampleVersionMetadata.version),
+  `definition/version.json version ${JSON.stringify(sampleVersionMetadata.version)} does not match ` +
+    `the published versionMetadata/1.0.0 pattern ${VERSION_METADATA_PATTERN.source}`
+);
+
+const schemaProblems = findUnpublishedSchemaReferences(sampleRoot);
+assert(
+  schemaProblems.length === 0,
+  `the sample references schema versions that are not published:\n  ${schemaProblems.join("\n  ")}`
+);
 assert(
   !fs.existsSync(path.join(sampleModel, "model.bim")),
   "a leftover model.bim would override the TMDL definition folder"
@@ -236,6 +282,24 @@ assert(
 
 const sampleReportJson = JSON.parse(
   fs.readFileSync(path.join(sampleReport, "definition", "report.json"), "utf8")
+);
+for (const property of REQUIRED_REPORT_PROPERTIES) {
+  assert(
+    sampleReportJson[property] !== undefined,
+    `definition/report.json is missing required property ${property}; Power BI Desktop rejects the definition`
+  );
+}
+const baseTheme = sampleReportJson.themeCollection?.baseTheme;
+assert(baseTheme !== undefined, "definition/report.json themeCollection must declare a baseTheme");
+for (const field of ["name", "reportVersionAtImport", "type"]) {
+  assert(
+    typeof baseTheme[field] === "string" && baseTheme[field].length > 0,
+    `definition/report.json themeCollection.baseTheme.${field} must be a non-empty string`
+  );
+}
+assert(
+  baseTheme.type === "SharedResources" || baseTheme.type === "RegisteredResources",
+  "definition/report.json themeCollection.baseTheme.type must be SharedResources or RegisteredResources"
 );
 assert(
   sampleReportJson.publicCustomVisuals === undefined,
@@ -331,6 +395,14 @@ assert(
   sampleVisualBundle.content?.js?.includes(`powerbiGlobal.visuals.plugins[${JSON.stringify(expectedGuid)}]`),
   "the embedded visual bundle does not register its plugin"
 );
+assert(
+  typeof sampleVisualBundle.content?.css === "string" && sampleVisualBundle.content.css.trim().length > 0,
+  "the embedded visual bundle ships no CSS; re-run npm run build && npm run sample:report"
+);
+assert(
+  sampleVisualBundle.content.css === fs.readFileSync(path.join(root, "dist", "visual.css"), "utf8"),
+  "the embedded visual CSS is stale or is not the compiled stylesheet; re-run npm run sample:report"
+);
 
 const distFiles = fs.readdirSync(path.join(root, "dist")).sort();
 assert(
@@ -339,6 +411,7 @@ assert(
       "atlyn-cohort-retention.pbiviz",
       "package-metadata.json",
       "publication-readiness.json",
+      "visual.css",
       "visual.js",
       "visual.js.map"
     ]),
@@ -346,7 +419,7 @@ assert(
 );
 
 JSZip.loadAsync(fs.readFileSync(packagePath))
- .then((archive) => {
+ .then(async (archive) => {
    const allEntries = Object.values(archive.files);
    assert(
      allEntries.every((entry) => !entry.dir),
@@ -360,6 +433,29 @@ JSZip.loadAsync(fs.readFileSync(packagePath))
      JSON.stringify(packageFiles) === JSON.stringify(metadata.sourceFiles),
      "package file entries do not match source metadata"
    );
+
+   // The visual shipped with no CSS at all until the webpack less rule existed: the
+   // `style` field in pbiviz.json is only honoured by `pbiviz package`, which this
+   // repo does not use. Assert against the packaged bytes, not the repo sources, so
+   // a broken loader chain or a dropped import can never regress silently again.
+   const packagedCssEntry = archive.file("visual.css");
+   assert(packagedCssEntry !== null, "the package does not contain the compiled visual.css");
+   const packagedCss = await packagedCssEntry.async("string");
+   assert(packagedCss.trim().length > 0, "the packaged visual.css is empty");
+   assert(
+     /\.atlyn-cohort-visual\s*\{/.test(packagedCss),
+     "the packaged visual.css does not contain the visual's root rule"
+   );
+   assert(
+     packagedCss.includes(".atlyn-matrix caption"),
+     "the packaged visual.css is missing the screen-reader-only caption rule, so accessibility markup would render as visible text"
+   );
+   assert(
+     !packagedCss.includes("@media") || /@media\s*\(/.test(packagedCss),
+     "the packaged visual.css contains unprocessed media query syntax"
+   );
+
+   console.log(`Packaged visual.css: ${Buffer.byteLength(packagedCss, "utf8")} bytes.`);
    console.log("Certification audit passed.");
  })
  .catch((error) => {

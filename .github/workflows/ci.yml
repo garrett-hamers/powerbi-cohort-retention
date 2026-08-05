@@ -24,4 +24,41 @@ jobs:
       - run: npm run build
       - run: npm run publication:assets:enforce
       - run: npm run package
+      - name: Record the packaged artifact identity
+        id: artifact
+        run: |
+          set -euo pipefail
+          package="$(ls dist/*.pbiviz)"
+          name="$(basename "$package")"
+          size="$(stat -c %s "$package")"
+          sha="$(sha256sum "$package" | cut -d' ' -f1)"
+          css_bytes="$(unzip -p "$package" visual.css | wc -c | tr -d ' ')"
+          test "$css_bytes" -gt 0
+          echo "filename=$name"     >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha"        >> "$GITHUB_OUTPUT"
+          echo "size=$size"         >> "$GITHUB_OUTPUT"
+          {
+            echo "### Packaged visual"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Filename | \`$name\` |"
+            echo "| SHA-256 | \`$sha\` |"
+            echo "| Size (bytes) | $size |"
+            echo "| Packaged CSS (bytes) | $css_bytes |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "filename : $name"
+          echo "sha256   : $sha"
+          echo "size     : $size bytes"
+          echo "css      : $css_bytes bytes"
+      # Publishes the exact binary the owner uploads to Azure Blob, so the file that is
+      # submitted is never ambiguous.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atlyn-cohort-retention-pbiviz
+          path: |
+            dist/*.pbiviz
+            dist/package-metadata.json
+          if-no-files-found: error
+          retention-days: 90
       - run: npm audit

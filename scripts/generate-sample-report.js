@@ -60,6 +60,36 @@ const PERIOD_COUNT = 12;
 const PBIR_DEFINITION_VERSION = "4.0";
 const PBISM_DEFINITION_VERSION = "4.0";
 
+/**
+ * `definition/version.json` is a DIFFERENT field with a different rule from the two
+ * above. The published `versionMetadata/1.0.0` schema constrains it to
+ * `^[1-9][0-9]*\.(0|[1-9][0-9]*)\.0$` — "format is major.minor.patch, major >= 1,
+ * minor >= 0, patch always 0". The folder-format selector "4.0" is not a legal value
+ * here because it has only two components.
+ *
+ * https://github.com/microsoft/json-schemas/blob/main/fabric/item/report/definition/versionMetadata/1.0.0/schema.json
+ */
+const PBIR_VERSION_METADATA = "2.0.0";
+
+/**
+ * The published report schema version. There is no 2.4.0: microsoft/json-schemas
+ * publishes 1.0.0 1.1.0 1.2.0 1.3.0 2.0.0 2.1.0 3.0.0 3.1.0 3.2.0 3.3.0, so the
+ * sequence jumps 2.1.0 -> 3.0.0. 2.1.0 is the newest 2.x and opens in Power BI
+ * Desktop 2.150.2102.0.
+ */
+const REPORT_SCHEMA_VERSION = "2.1.0";
+
+/**
+ * `themeCollection` is a REQUIRED property of the report schema, and Power BI Desktop
+ * refuses a report definition without it. `reportVersionAtImport` is a plain string in
+ * the 1.x/2.x schemas; it only becomes an object at 3.x.
+ */
+const BASE_THEME = {
+  name: "CY24SU10",
+  reportVersionAtImport: "5.61",
+  type: "SharedResources"
+};
+
 /** Deterministic PBIR object names, so regenerating never churns the diff. */
 function stableName(seed) {
   return crypto.createHash("sha256").update(seed).digest("hex").slice(0, 20);
@@ -148,7 +178,10 @@ function readStringResources() {
  */
 function buildEmbeddedVisual(pbiviz, capabilities) {
   const bundle = readText("dist", "visual.js");
-  const css = readText("style", "visual.less");
+  // The COMPILED stylesheet, not the LESS source. This mirrors
+  // powerbi-visuals-webpack-plugin, which runs the declared `style` through less and
+  // stores the resulting CSS here. Power BI injects `content.css` verbatim.
+  const css = readText("dist", "visual.css");
   const icon = fs.readFileSync(path.join(root, "assets", "icon.png"));
 
   const visual = {
@@ -340,6 +373,12 @@ function main() {
   if (!fs.existsSync(bundlePath)) {
     throw new Error("dist/visual.js is missing. Run `npm run build` before generating the sample report.");
   }
+  const stylesheetPath = path.join(root, "dist", "visual.css");
+  if (!fs.existsSync(stylesheetPath) || fs.readFileSync(stylesheetPath, "utf8").trim().length === 0) {
+    throw new Error(
+      "dist/visual.css is missing or empty. Run `npm run build` before generating the sample report."
+    );
+  }
 
   const pbiviz = readJson("pbiviz.json");
   const capabilities = readJson("capabilities.json");
@@ -391,13 +430,13 @@ function main() {
     writeJson(`${reportFolder}/definition/version.json`, {
       $schema:
         "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json",
-      version: PBIR_DEFINITION_VERSION
+      version: PBIR_VERSION_METADATA
     })
   );
   written.push(
     writeJson(`${reportFolder}/definition/report.json`, {
-      $schema:
-        "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/2.4.0/schema.json",
+      $schema: `https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/${REPORT_SCHEMA_VERSION}/schema.json`,
+      themeCollection: { baseTheme: { ...BASE_THEME } },
       resourcePackages: [
         {
           name: guid,

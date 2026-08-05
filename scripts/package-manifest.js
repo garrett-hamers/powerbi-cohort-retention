@@ -28,6 +28,10 @@ function getPackageSourceEntries(root) {
     ["pbiviz.json", path.join(root, "pbiviz.json")],
     ["capabilities.json", path.join(root, "capabilities.json")],
     ["style/visual.less", path.join(root, "style", "visual.less")],
+    // The compiled stylesheet. `style/visual.less` is the declared source that
+    // pbiviz.json points at; `visual.css` is what actually styles the visual at
+    // runtime, and shipping it is the whole point of the webpack less rule.
+    ["visual.css", path.join(root, "dist", "visual.css")],
     ["visual.js", path.join(root, "dist", "visual.js")],
     ["assets/icon.png", path.join(root, "assets", "icon.png")]
   ];

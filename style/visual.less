@@ -8,6 +8,11 @@
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  /* Load-bearing. Without it the absolutely positioned <caption> below is laid out
+     against the initial containing block, so it belongs to the page rather than to
+     the visual: `overflow: hidden` here does not clip it and it does not scroll with
+     the matrix it labels. */
+  position: relative;
   --atlyn-cell-padding: 6px;
   --atlyn-foreground: currentColor;
   --atlyn-background: Canvas;
@@ -36,10 +41,20 @@
   table-layout: fixed;
 }
 
+/* Screen-reader-only. Size plus `overflow: hidden` alone is not enough: without
+   `clip-path` a sliver of the label can still paint, and without `white-space: nowrap`
+   a long caption reflows inside the 1px box. */
 .atlyn-matrix caption {
+  border: 0;
+  clip-path: inset(50%);
   height: 1px;
+  left: 0;
+  margin: -1px;
   overflow: hidden;
+  padding: 0;
   position: absolute;
+  top: 0;
+  white-space: nowrap;
   width: 1px;
 }
 
@@ -56,16 +71,33 @@
 .atlyn-matrix th {
   background: #f4f4f4;
   font-weight: 600;
-  position: sticky;
-  top: 0;
-  z-index: 1;
 }
 
+/* Sticky positioning is scoped per band on purpose.
+   A shared `.atlyn-matrix th { position: sticky; top: 0 }` also made every ROW header
+   sticky vertically, so scrolling down piled all the cohort labels on top of one
+   another at the top of the scrollport, covering the period headers. */
+.atlyn-matrix thead th {
+  position: sticky;
+  /* Overridden per header band by src/visual.ts when the Period hierarchy is
+     expanded, so nested levels stack instead of collapsing onto the first. */
+  top: 0;
+  z-index: 3;
+}
+
+/* Row headers stick to the inline start only, and must paint BELOW the column header
+   band they scroll under. */
 .atlyn-matrix tbody th {
   left: 0;
   position: sticky;
   text-align: left;
   z-index: 2;
+}
+
+/* The corner label spans both header bands and so must sit above both. */
+.atlyn-matrix thead th.atlyn-corner {
+  left: 0;
+  z-index: 4;
 }
 
 .atlyn-matrix td {
@@ -179,6 +211,11 @@
   left: auto;
   right: 0;
   text-align: right;
+}
+
+[dir="rtl"] .atlyn-matrix thead th.atlyn-corner {
+  left: auto;
+  right: 0;
 }
 
 @media (max-width: 480px) {

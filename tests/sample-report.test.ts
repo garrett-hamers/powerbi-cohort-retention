@@ -111,15 +111,68 @@ describe("offline PBIP sample report", () => {
     // folders require "4.0" or higher, otherwise Power BI Desktop ignores them.
     const pbir = readJson(path.join(reportFolder, "definition.pbir"));
     const pbism = readJson(path.join(modelFolder, "definition.pbism"));
-    const version = readJson(path.join(reportFolder, "definition", "version.json"));
 
     expect(Number(pbir.version)).toBeGreaterThanOrEqual(4);
     expect(Number(pbism.version)).toBeGreaterThanOrEqual(4);
-    expect(Number(version.version)).toBeGreaterThanOrEqual(4);
 
     // A leftover legacy file would silently win over the folder it replaces.
     expect(fs.existsSync(path.join(modelFolder, "model.bim"))).toBe(false);
     expect(fs.existsSync(path.join(reportFolder, "report.json"))).toBe(false);
+  });
+
+  test("gives definition/version.json a version the published schema accepts", () => {
+    // definition/version.json is a DIFFERENT field from the two folder-format
+    // selectors above, governed by versionMetadata/1.0.0:
+    //   "format is major.minor.patch - major >=1, minor >=0, patch always 0"
+    // "4.0" has only two components and fails that pattern.
+    const { VERSION_METADATA_PATTERN } = require("../scripts/fabric-schemas");
+    const version = readJson(path.join(reportFolder, "definition", "version.json"));
+    expect(version.version).toMatch(VERSION_METADATA_PATTERN);
+    expect(version.version).toBe("2.0.0");
+    expect(version.$schema).toBe(
+      "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/versionMetadata/1.0.0/schema.json"
+    );
+  });
+
+  test("references only schema versions Microsoft actually publishes", () => {
+    // The sample previously claimed report schema 2.4.0, which does not exist: the
+    // published sequence jumps 2.1.0 -> 3.0.0. Nothing fetches these URLs at runtime,
+    // so an invented version fails silently until the definition itself is rejected.
+    const {
+      findUnpublishedSchemaReferences,
+      listSampleSchemaReferences,
+      parseSchemaUrl,
+      PUBLISHED_SCHEMA_VERSIONS
+    } = require("../scripts/fabric-schemas");
+
+    const references = listSampleSchemaReferences(samples);
+    expect(references.length).toBeGreaterThanOrEqual(6);
+    expect(findUnpublishedSchemaReferences(samples)).toEqual([]);
+
+    references.forEach((reference: { file: string; url: string }) => {
+      const parsed = parseSchemaUrl(reference.url);
+      expect(parsed).not.toBeNull();
+      expect(PUBLISHED_SCHEMA_VERSIONS[parsed.family]).toContain(parsed.version);
+    });
+
+    const report = readJson(path.join(reportFolder, "definition", "report.json"));
+    expect(report.$schema).toContain("/report/2.1.0/schema.json");
+    expect(PUBLISHED_SCHEMA_VERSIONS["fabric/item/report/definition/report"]).not.toContain("2.4.0");
+  });
+
+  test("declares the themeCollection the report schema requires", () => {
+    // `themeCollection` is a required property of the report schema, and Power BI
+    // Desktop refuses a report definition without it.
+    const report = readJson(path.join(reportFolder, "definition", "report.json"));
+    expect(report.themeCollection).toBeDefined();
+    expect(report.themeCollection.baseTheme).toBeDefined();
+    expect(typeof report.themeCollection.baseTheme.name).toBe("string");
+    expect(report.themeCollection.baseTheme.name.length).toBeGreaterThan(0);
+    // A plain string in the 1.x/2.x schemas; only 3.x turns it into an object.
+    expect(typeof report.themeCollection.baseTheme.reportVersionAtImport).toBe("string");
+    expect(["SharedResources", "RegisteredResources"]).toContain(
+      report.themeCollection.baseTheme.type
+    );
   });
 
   test("binds the visual by GUID to roles that exist in capabilities.json", () => {
@@ -189,9 +242,14 @@ describe("offline PBIP sample report", () => {
     expect(definition.capabilities).toEqual(capabilities);
     expect(definition.stringResources["en-US"]).toBeDefined();
     expect(definition.content.iconBase64.startsWith("data:image/png;base64,")).toBe(true);
-    expect(definition.content.css).toBe(
-      fs.readFileSync(path.join(root, "style", "visual.less"), "utf8").replace(/\r\n/g, "\n")
-    );
+    // The COMPILED stylesheet, matching what powerbi-visuals-webpack-plugin stores.
+    // Power BI injects content.css verbatim, so the LESS source would not be usable.
+    expect(definition.content.css.trim().length).toBeGreaterThan(0);
+    expect(definition.content.css).toContain(".atlyn-cohort-visual");
+    const compiledPath = path.join(root, "dist", "visual.css");
+    if (fs.existsSync(compiledPath)) {
+      expect(definition.content.css).toBe(fs.readFileSync(compiledPath, "utf8"));
+    }
     expect(definition.content.js).toContain(`powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}]`);
   });
 
@@ -242,6 +300,7 @@ describe("offline PBIP sample report", () => {
       "stringResources/en-US/resources.resjson",
       "stringResources/es-ES/resources.resjson",
       "style/visual.less",
+      "visual.css",
       "visual.js"
     ]);
     names.forEach((name: string) => expect(name.startsWith("samples/")).toBe(false));
