@@ -212,6 +212,10 @@ describe("clean visual package metadata", () => {
   test("enforces the publication asset gate in CI", () => {
     const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
     expect(workflow).toContain("npm run publication:assets:enforce");
+    // The packaged-artifact tests above skip when no .pbiviz has been built yet, which is the
+    // case during CI's first `npm test`. Without a post-package run the loadability gate would
+    // silently never execute in CI.
+    expect(workflow).toMatch(/npm run package[\s\S]*npm test -- tests\/packaging\.test\.ts/);
   });
 });
 

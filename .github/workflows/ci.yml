@@ -24,4 +24,8 @@ jobs:
       - run: npm run build
       - run: npm run publication:assets:enforce
       - run: npm run package
+      # The packaged-artifact tests skip when no .pbiviz exists, which is the case on the
+      # first `npm test` above. Re-run them now that the package has been built, so the
+      # loadability gate actually executes in CI.
+      - run: npm test -- tests/packaging.test.ts
       - run: npm audit
