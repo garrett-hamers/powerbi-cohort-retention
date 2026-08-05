@@ -285,6 +285,30 @@ describe("applicability and evaluation cannot disagree", () => {
     expect(source).not.toContain('couldNotRun.push("style/visual.less")');
     expect(source).toContain("RULE_DESCRIPTIONS");
   });
+
+  test("the rules-that-ran list is reporting-only, never the guard's decision", () => {
+    // The list of applicable rules must never be what makes the guard work. If it were,
+    // a caller could pass by reading it instead of the problems — the ignorable-value
+    // shape that produced the original defect, where an empty list read as "fresh".
+    //
+    // Position is the property, so position is what this measures: the guard has already
+    // thrown or not by the time either reporting helper is consulted. It fails only if a
+    // helper moves into or ahead of the decision, which is exactly the change that would
+    // make it load-bearing — not on innocuous edits elsewhere.
+    const check = fs.readFileSync(path.join(root, "scripts", "render-check.js"), "utf8");
+    const guard = check.indexOf("function assertPackagedContentIsFresh");
+    expect(guard).toBeGreaterThan(-1);
+
+    const decision = check.indexOf("if (problems.length > 0)", guard);
+    const thrown = check.indexOf("throw error;", decision);
+    expect(decision).toBeGreaterThan(guard);
+    expect(thrown).toBeGreaterThan(decision);
+
+    // The import lines carry no parenthesis, so these find call sites rather than names.
+    for (const helper of ["applicableFreshnessRules(", "describeCheckedRules("]) {
+      expect(check.indexOf(helper, guard)).toBeGreaterThan(thrown);
+    }
+  });
 });
 
 describe("the guard is wired into the render check", () => {  test("runs before anything is measured", () => {
