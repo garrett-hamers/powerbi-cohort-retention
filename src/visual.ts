@@ -26,7 +26,18 @@ import IVisualHost = powerbi.extensibility.visual.IVisualHost;
 import VisualConstructorOptions = powerbi.extensibility.visual.VisualConstructorOptions;
 import VisualUpdateOptions = powerbi.extensibility.visual.VisualUpdateOptions;
 
-export const VISUAL_GUID = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+/**
+ * The visual GUID, in the form the official tooling generates: the visual `name`
+ * followed by an uppercase hyphenless UUID
+ * (`powerbi-visuals-tools/lib/VisualGenerator.js`:
+ * `guid: name + crypto.randomUUID().replace(/-/g, "").toUpperCase()`).
+ *
+ * That form matters because the packager's plugin template declares
+ * `var <guid> = {...}`, so the GUID must be a valid JavaScript identifier. The
+ * hyphenated UUID this visual used before publication was not, and the hex digits
+ * here are that same UUID with the hyphens removed, so provenance is preserved.
+ */
+export const VISUAL_GUID = "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11";
 
 type SelectionManager = ReturnType<IVisualHost["createSelectionManager"]>;
 type SelectionId = ReturnType<

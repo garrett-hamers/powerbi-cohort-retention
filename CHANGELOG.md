@@ -58,8 +58,34 @@
 - Documented conditional Power BI Desktop guidance: refresh only if a table shows as
   empty or Desktop reports incomplete data, and treat any credential prompt as a signal
   that something external has entered the model.
+- **Changed the visual GUID from `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` to
+  `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`.**
+  `powerbi-visuals-tools/lib/VisualGenerator.js` builds a GUID as
+  `name + crypto.randomUUID().replace(/-/g, "").toUpperCase()`, because the packager's
+  plugin template (`powerbi-visuals-webpack-plugin/templates/plugin-template.js`)
+  declares `var <guid> = {...}` — a syntax error for a hyphenated name. Every GUID the
+  official tooling produces is a valid JavaScript identifier; this visual's was the one
+  outlier in the portfolio. The new value is exactly what the generator would have
+  produced: `visual.name` followed by the **same UUID**, hyphens removed and uppercased,
+  so provenance is preserved.
+  **This was safe only because the visual has never been published to AppSource.** A
+  GUID change after publication would orphan every report binding the old `visualType`,
+  and it would not be safe to do again. The change cascades through `pbiviz.json`,
+  `src/visual.ts`, the certification audit, the tests, and the sample report's
+  `CustomVisuals/<GUID>/` directory, `resources/<GUID>.pbiviz.json` filename,
+  `resourcePackages` entry, and `visual.json` `visualType`.
+  The **packaged filename does not change**: `scripts/package.js` writes a fixed
+  `dist/atlyn-cohort-retention.pbiviz` rather than the official packager's
+  `<guid>.<version>.pbiviz`. The packaged bytes and SHA-256 do change, because
+  `pbiviz.json` is a packaged input.
+- With an identifier-safe GUID the sample report's embedded plugin now uses the
+  packager's own `var <guid> = {...}` declaration instead of the previous workaround.
+  The registry assignment stays `powerbi.visuals.plugins["<guid>"] = <guid>;` — a
+  bracketed string key is what the official template emits, verified by reading it
+  rather than assumed. The certification audit and `tests/packaging.test.ts` now pin the
+  GUID's *shape* as well as its value.
 - **Bumped the visual version from `1.0.0.0` to `1.0.1.0`** (`pbiviz.json` `visual.version`,
-  `package.json` `1.0.1`). The GUID `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` is unchanged.
+  `package.json` `1.0.1`).
 - **This release supersedes the v1.0.0.0 storefront artifact.** The owner's storefront is
   distributing a `.pbiviz` at the version-keyed Blob path
   `cohort-retention/1.0.0.0/atlyn-cohort-retention.pbiviz`
@@ -117,11 +143,13 @@ deliberately not packaged inputs, so they do not affect it.
   now drops directory entries, which carry no content because every file entry already
   stores its full path.
 
-**Open risk.** The official Power BI tooling generates visual GUIDs that are valid
-JavaScript identifiers (`name` + uppercase hyphenless UUID). This project's GUID is a
-hyphenated UUID, which breaks the official plugin template. The sample report's embedded
-bundle works around it with bracket-notation plugin registration, but acceptance by Power
-BI Desktop and Partner Center is unverified. See the GUID risk section of
+**Resolved risk.** The official Power BI tooling generates visual GUIDs that are valid
+JavaScript identifiers (`name` + uppercase hyphenless UUID), because the plugin template
+declares `var <guid> = {...}`. This project's GUID was a hyphenated UUID, which that
+template cannot declare. It has now been changed to
+`atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`, which is the form the official
+generator produces and preserves the original UUID's hex. The sample report's embedded
+bundle no longer needs a workaround. See the GUID section of
 `docs/partner-center-submission.md`.
 
 ## 1.0.0

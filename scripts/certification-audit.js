@@ -17,7 +17,7 @@ const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), 
 const metadataPath = path.join(root, "dist", "package-metadata.json");
 const publicationMetadataPath = path.join(root, "dist", "publication-readiness.json");
 const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
-const expectedGuid = "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11";
+const expectedGuid = "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11";
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const ICON_SIZE = 20;
 const LOGO_SIZE = 300;
@@ -45,6 +45,23 @@ function readPngDimensions(bytes, relativePath) {
 }
 
 assert(pbiviz.visual.guid === expectedGuid, "the visual GUID changed");
+// `powerbi-visuals-tools/lib/VisualGenerator.js` builds a GUID as
+// `name + crypto.randomUUID().replace(/-/g, "").toUpperCase()`, and
+// `powerbi-visuals-webpack-plugin/templates/plugin-template.js` then declares
+// `var <guid> = {...}`. A GUID that is not a valid JavaScript identifier is therefore
+// a syntax error in the generated plugin. Pin the shape, not just the value.
+assert(
+  /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(pbiviz.visual.guid),
+  "the visual GUID must be a valid JavaScript identifier; the plugin template declares `var <guid> = {...}`"
+);
+assert(
+  pbiviz.visual.guid.startsWith(pbiviz.visual.name),
+  "the visual GUID must begin with the visual name, as powerbi-visuals-tools generates it"
+);
+assert(
+  /^[0-9A-F]{32}$/.test(pbiviz.visual.guid.slice(pbiviz.visual.name.length)),
+  "the visual GUID suffix must be an uppercase hyphenless UUID"
+);
 assert(/^\d+\.\d+\.\d+\.\d+$/.test(pbiviz.visual.version), "visual version must have four numeric parts");
 assert(pbiviz.apiVersion === "5.11.1", "the API version changed unexpectedly");
 assert(Array.isArray(pbiviz.externalJS) && pbiviz.externalJS.length === 0, "externalJS must remain empty");
@@ -392,7 +409,13 @@ assert(
   "the embedded visual capabilities are stale; re-run npm run sample:report"
 );
 assert(
-  sampleVisualBundle.content?.js?.includes(`powerbiGlobal.visuals.plugins[${JSON.stringify(expectedGuid)}]`),
+  sampleVisualBundle.content?.js?.includes(`var ${expectedGuid} = {`),
+  "the embedded visual bundle does not declare the plugin in the packager's `var <guid>` form"
+);
+assert(
+  sampleVisualBundle.content?.js?.includes(
+    `powerbi.visuals.plugins[${JSON.stringify(expectedGuid)}] = ${expectedGuid};`
+  ),
   "the embedded visual bundle does not register its plugin"
 );
 assert(

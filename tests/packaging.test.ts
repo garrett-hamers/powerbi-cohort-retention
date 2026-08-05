@@ -7,7 +7,7 @@ describe("clean visual package metadata", () => {
   test("keeps the GUID stable and has no privileges", () => {
     const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8"));
-    expect(pbiviz.visual.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
+    expect(pbiviz.visual.guid).toBe("atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11");
     expect(pbiviz.visual.version).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
     expect(pbiviz.externalJS).toEqual([]);
     expect(capabilities.privileges).toEqual([]);
@@ -36,6 +36,27 @@ describe("clean visual package metadata", () => {
     expect(capabilities.tooltips.supportEnhancedTooltips).toBe(true);
   });
 
+  test("uses a GUID the official plugin template can declare", () => {
+    // powerbi-visuals-tools/lib/VisualGenerator.js builds a GUID as
+    //   name + crypto.randomUUID().replace(/-/g, "").toUpperCase()
+    // and powerbi-visuals-webpack-plugin/templates/plugin-template.js then emits
+    //   var <guid> = { ... };
+    //   powerbi.visuals.plugins["<guid>"] = <guid>;
+    // so a GUID that is not a valid JavaScript identifier is a syntax error in the
+    // generated plugin. This visual previously used a hyphenated UUID.
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
+    const guid: string = pbiviz.visual.guid;
+    expect(guid).toMatch(/^[A-Za-z_$][A-Za-z0-9_$]*$/);
+    expect(guid).not.toContain("-");
+    expect(guid.startsWith(pbiviz.visual.name)).toBe(true);
+    expect(guid.slice(pbiviz.visual.name.length)).toMatch(/^[0-9A-F]{32}$/);
+    // The hex is the original pre-publication UUID, hyphens removed and uppercased,
+    // so provenance survives the rename.
+    expect(guid.slice(pbiviz.visual.name.length).toLowerCase()).toBe(
+      "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11".replace(/-/g, "")
+    );
+  });
+
   test("contains no network, external asset, or unsafe DOM request", () => {
     const source = fs
       .readdirSync(path.join(root, "src"))
@@ -61,7 +82,7 @@ describe("clean visual package metadata", () => {
     const metadataPath = path.join(root, "dist", "package-metadata.json");
     if (fs.existsSync(metadataPath)) {
       const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
-      expect(metadata.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
+      expect(metadata.guid).toBe("atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11");
       expect(metadata.privileges).toEqual([]);
     }
   });
@@ -139,7 +160,7 @@ describe("AppSource submission assets", () => {
     const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
     expect(pbiviz.visual.name).toBeTruthy();
     expect(pbiviz.visual.displayName).toBeTruthy();
-    expect(pbiviz.visual.guid).toBe("d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11");
+    expect(pbiviz.visual.guid).toBe("atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11");
     expect(pbiviz.visual.version).toMatch(/^\d+\.\d+\.\d+\.\d+$/);
     expect(pbiviz.visual.description.length).toBeGreaterThanOrEqual(120);
     expect(pbiviz.visual.supportUrl).toBe("https://atlyn.io/contact");
@@ -162,7 +183,7 @@ describe("AppSource submission assets", () => {
       "utf8"
     );
     [
-      "d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11",
+      "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11",
       "https://atlyn.io/contact",
       "https://atlyn.io/legal/privacy",
       "atlyn.help@gmail.com",

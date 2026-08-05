@@ -22,7 +22,7 @@ and
 | --- | --- | --- |
 | Visual name | `visual.name` | `atlynCohortRetention` |
 | Display name | `visual.displayName` | `Atlyn Cohort Retention` |
-| Visual GUID | `visual.guid` | `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` |
+| Visual GUID | `visual.guid` | `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11` |
 | Version (four parts) | `visual.version` | `1.0.1.0` |
 | API version | `apiVersion` | `5.11.1` |
 | Description | `visual.description` | See [section 2](#2-listing-description). 641 characters. |
@@ -285,36 +285,46 @@ declares a `partition ... = m` Power Query partition instead of a calculated tab
 They also fail if `publicCustomVisuals` appears in `report.json`, since that
 resolves the visual from the AppSource store rather than from the embedded package.
 
-### Risk: the visual GUID is not in the toolchain's format
+### Resolved: the visual GUID now matches the toolchain's format
 
-This is unresolved and needs an owner decision.
+This was an open risk. It is closed: the GUID was changed before publication.
 
 `node_modules/powerbi-visuals-tools/lib/VisualGenerator.js` line 46 generates a
-visual GUID as `name + crypto.randomUUID().replace(/-/g, "").toUpperCase()`. For
-this project that would be `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`.
-Every GUID the official tooling produces is therefore a **valid JavaScript
-identifier**.
+visual GUID as `name + crypto.randomUUID().replace(/-/g, "").toUpperCase()`. Every
+GUID the official tooling produces is therefore a **valid JavaScript identifier**,
+because the official plugin template
+(`node_modules/powerbi-visuals-webpack-plugin/templates/plugin-template.js` line 17)
+emits `var <pluginName>: IVisualPlugin = {...}` — a **syntax error** for a hyphenated
+name.
 
-This repository's GUID is the hyphenated UUID
-`d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11`. The official plugin template
-(`node_modules/powerbi-visuals-webpack-plugin/templates/plugin-template.js` line
-17) emits `var <pluginName>: IVisualPlugin = {...}`, which is a **syntax error**
-for a hyphenated name. That is the concrete, verifiable reason this repository
-cannot use the CLI's package compiler as its package producer, as noted in
-`README.md`.
+| | Value |
+| --- | --- |
+| Was | `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` (hyphenated UUID, not an identifier) |
+| Now | `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11` |
 
-**What was done:** the GUID is frozen because it is already recorded in the
-owner's storefront release manifest and artifact download paths, so the sample
-report's embedded bundle registers the plugin with bracket notation,
-`powerbi.visuals.plugins["d9f6b5a2-..."] = {...}`. That is valid JavaScript and
-semantically identical to the official template, and a JSDOM test proves the
-plugin registers and renders.
+The new value is exactly what the official generator would have produced for this
+project: `visual.name` (`atlynCohortRetention`) followed by the **same UUID**, hyphens
+removed and uppercased. Provenance is preserved — the hex digits are unchanged.
 
-**What is unverified:** whether **Power BI Desktop and Partner Center accept a
-hyphenated GUID** as a visual type. This repository cannot test that. If either
-rejects it, the only fix is a GUID change, which would also require re-publishing
-the storefront release manifest and artifact download paths. Validate this during
-the one-time Power BI Desktop step above, before submitting.
+**This was safe only because the visual has never been published to AppSource.** A
+GUID change after publication would orphan every existing report that binds the old
+`visualType`. It would not be safe to do again.
+
+**What the embedded bundle now emits.** Reading the packager's template rather than
+assuming, two details are deliberate:
+
+- The plugin is declared `var <guid> = {...}`, which is legal only because the GUID is
+  an identifier. This is the simplification the rename unlocked.
+- The registry assignment stays `powerbi.visuals.plugins["<guid>"] = <guid>;` — a
+  bracketed **string** key. That is what the official template emits; dot notation
+  would be a deviation from it, not a simplification.
+
+`scripts/certification-audit.js` and `tests/packaging.test.ts` now pin the *shape* as
+well as the value: the GUID must be a valid JavaScript identifier, must begin with
+`visual.name`, and must end with an uppercase 32-character hex UUID.
+
+This repository still does not use the CLI's package compiler as its package producer
+(see `README.md`), but the reason is no longer a GUID the template cannot declare.
 
 ## 9. Packaged artifact
 
@@ -379,8 +389,11 @@ page rather than the visual (`offsetParent` was `<body>`), so neither the visual
 the matrix it labels. `.atlyn-cohort-visual` is now `position: relative` and the caption
 uses the complete pattern including `clip-path` and `white-space: nowrap`.
 
-The packaged filename carries no version segment — `scripts/package.js` writes a fixed
-`dist/atlyn-cohort-retention.pbiviz` — so only the version-keyed storefront path changes.
+The packaged filename carries no version segment and no GUID segment —
+`scripts/package.js` writes a fixed `dist/atlyn-cohort-retention.pbiviz` — so **the
+GUID change does not rename the artifact**. Only the version-keyed storefront path
+changes. (The official packager would have named it `<guid>.<version>.pbiviz`, but
+this repository does not use it as the package producer.)
 
 **Why the version was bumped to `1.0.1.0`.** The owner's storefront is already
 distributing an artifact at the version-keyed path
@@ -390,8 +403,11 @@ distributing an artifact at the version-keyed path
 (`scripts/package-manifest.js`), so replacing the 1 x 1 placeholder icon and
 correcting the submission metadata necessarily produced different bytes. Two
 different files must not share one version number, so `visual.version` is now
-`1.0.1.0` and this build supersedes the published v1.0.0.0 artifact. The GUID
-`d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` is deliberately unchanged.
+`1.0.1.0` and this build supersedes the published v1.0.0.0 artifact. The GUID also
+changed in this release, from `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` to
+`atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`; `pbiviz.json` is a packaged
+input, so that is a further reason the bytes differ. See the GUID section of
+[section 8b](#8b-sample-report-offline).
 
 ### Reproducibility scope
 

@@ -55,10 +55,16 @@ npm run audit
 ```
 
 `npm run package` runs the direct `pbiviz` version gate, creates the package from
-source inputs, and runs the certification audit. The current Power BI CLI's
-internal package compiler is not used as the package producer because its
-generated plugin uses UUIDs as JavaScript identifiers; the repository retains the
-valid stable UUID and applies the equivalent source/package gates locally.
+source inputs, and runs the certification audit. The CLI's internal package compiler
+is not used as the package producer, so this repository applies the equivalent
+source/package gates itself and writes a fixed `dist/atlyn-cohort-retention.pbiviz`
+rather than the CLI's `<guid>.<version>.pbiviz`.
+
+The visual GUID is `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`, in the form
+`powerbi-visuals-tools` generates: `visual.name` followed by an uppercase hyphenless
+UUID. That form is required, not cosmetic — the packager's plugin template declares
+`var <guid> = {...}`, so the GUID must be a valid JavaScript identifier. The
+certification audit and `tests/packaging.test.ts` pin that shape.
 
 ### The stylesheet
 

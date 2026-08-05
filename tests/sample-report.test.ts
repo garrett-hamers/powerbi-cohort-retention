@@ -250,7 +250,10 @@ describe("offline PBIP sample report", () => {
     if (fs.existsSync(compiledPath)) {
       expect(definition.content.css).toBe(fs.readFileSync(compiledPath, "utf8"));
     }
-    expect(definition.content.js).toContain(`powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}]`);
+    expect(definition.content.js).toContain(`var ${guid} = {`);
+    expect(definition.content.js).toContain(
+      `powerbi.visuals.plugins[${JSON.stringify(guid)}] = ${guid};`
+    );
   });
 
   test("sources data from a DAX calculated table, not a query", () => {

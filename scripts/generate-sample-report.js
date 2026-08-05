@@ -127,24 +127,43 @@ function tmdl(lines) {
 }
 
 /**
- * The plugin registration that `powerbi-visuals-webpack-plugin` normally appends to
- * the bundle. Its template emits `var <pluginName> = {...}`, which is a syntax error
- * here because this project's GUID is a hyphenated UUID rather than the
- * `name + uppercase hyphenless UUID` form that `pbiviz new` generates. Bracket
- * notation is valid JavaScript and semantically identical.
+ * The plugin registration that `powerbi-visuals-webpack-plugin` normally appends to the
+ * bundle, mirroring `templates/plugin-template.js` in that package:
+ *
+ *     var <guid>: IVisualPlugin = { name: '<guid>', ... };
+ *     if (typeof powerbi !== "undefined") {
+ *         powerbi.visuals = powerbi.visuals || {};
+ *         powerbi.visuals.plugins = powerbi.visuals.plugins || {};
+ *         powerbi.visuals.plugins["<guid>"] = <guid>;
+ *     }
+ *
+ * Two details are deliberate and were read from that template rather than assumed:
+ *
+ * - The plugin is declared as `var <guid> = {...}`, which is only legal because the
+ *   GUID is a valid JavaScript identifier. This is exactly why the visual's GUID
+ *   follows the `name + uppercase hyphenless UUID` form the official generator emits.
+ * - The registry assignment uses a bracketed STRING key, not dot notation. That is what
+ *   the template emits, so it is kept.
+ *
+ * The `create` body differs by necessity: this bundle is built with
+ * `libraryTarget: "var"` under the `AtlynCohortRetention` global rather than importing
+ * the visual class directly, so the class is resolved off that namespace.
  */
 function pluginRegistration(pbiviz) {
   const { guid, displayName, visualClassName, version } = pbiviz.visual;
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(guid)) {
+    throw new Error(
+      `The visual GUID ${JSON.stringify(guid)} is not a valid JavaScript identifier, so ` +
+        "the plugin template's `var <guid> = {...}` declaration would be a syntax error."
+    );
+  }
   return `
 /* Power BI visual plugin registration for ${displayName}. */
 (function () {
     "use strict";
     var powerbiKey = "powerbi";
-    var powerbiGlobal = typeof window !== "undefined" ? window[powerbiKey] : undefined;
-    if (!powerbiGlobal) return;
-    powerbiGlobal.visuals = powerbiGlobal.visuals || {};
-    powerbiGlobal.visuals.plugins = powerbiGlobal.visuals.plugins || {};
-    powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}] = {
+    var powerbi = typeof window !== "undefined" ? window[powerbiKey] : undefined;
+    var ${guid} = {
         name: ${JSON.stringify(guid)},
         displayName: ${JSON.stringify(displayName)},
         class: ${JSON.stringify(visualClassName)},
@@ -158,6 +177,11 @@ function pluginRegistration(pbiviz) {
         },
         custom: true
     };
+    if (typeof powerbi !== "undefined") {
+        powerbi.visuals = powerbi.visuals || {};
+        powerbi.visuals.plugins = powerbi.visuals.plugins || {};
+        powerbi.visuals.plugins[${JSON.stringify(guid)}] = ${guid};
+    }
 })();
 `;
 }
