@@ -23,7 +23,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { withHarness, delay } = require("./headless-browser");
 const { readPackagedVisual, root } = require("./packaged-visual");
-const { findStalePackagedContent, formatStaleArtifactError } = require("./package-freshness");
+const {
+  describeCheckedRules,
+  findStalePackagedContent,
+  formatStaleArtifactError,
+  formatUnverifiableArtifactError
+} = require("./package-freshness");
 
 const WIDTH = 1366;
 const HEIGHT = 768;
@@ -530,7 +535,7 @@ function assertPackagedContentIsFresh(packaged) {
   const stylesheetPath = path.join(root, "style", "visual.less");
   const bundlePath = path.join(root, "dist", "visual.js");
 
-  const problems = findStalePackagedContent({
+  const { problems, checked } = findStalePackagedContent({
     packagedCss: packaged.css,
     stylesheetSource: fs.existsSync(stylesheetPath) ? fs.readFileSync(stylesheetPath, "utf8") : undefined,
     packagedJs: packaged.js,
@@ -539,16 +544,34 @@ function assertPackagedContentIsFresh(packaged) {
     bundleSource: fs.existsSync(bundlePath) ? fs.readFileSync(bundlePath, "utf8") : undefined
   });
 
-  if (problems.length > 0) {
-    const error = new Error(
-      formatStaleArtifactError(path.relative(root, packaged.archivePath), problems)
-    );
+  const fail = (message) => {
+    const error = new Error(message);
     // Marks this as an actionable operator error so the entry point prints the
     // instructions rather than a stack trace.
     error.expected = true;
     throw error;
+  };
+
+  // Skipping a rule is safe only while another rule still concludes. With every source
+  // unreadable nothing has been verified, and reporting freshness there would be a claim
+  // made from zero evidence -- the same failure this guard exists to prevent, moved up
+  // into the composition.
+  if (checked.length === 0) {
+    fail(
+      formatUnverifiableArtifactError(path.relative(root, packaged.archivePath), [
+        path.relative(root, stylesheetPath).split(path.sep).join("/"),
+        path.relative(root, bundlePath).split(path.sep).join("/")
+      ])
+    );
   }
-  console.log("Packaged content matches the current sources (content.css, content.js).");
+
+  if (problems.length > 0) {
+    fail(formatStaleArtifactError(path.relative(root, packaged.archivePath), problems));
+  }
+
+  // Names what was actually checked, so a run that verified less than expected is visible
+  // in the log rather than indistinguishable from a full one.
+  console.log(`Packaged content matches the current sources (${describeCheckedRules(checked)}).`);
 }
 
 async function main() {

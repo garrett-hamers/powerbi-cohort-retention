@@ -29,6 +29,17 @@
 const STALE_CSS = "stale-css";
 const STALE_JS = "stale-js";
 
+/** What each rule actually compares, for messages where "stale-css" would read oddly. */
+const RULE_LABELS = {
+  [STALE_CSS]: "content.css",
+  [STALE_JS]: "content.js"
+};
+
+/** Names the content a set of rule kinds covers. */
+function describeCheckedRules(checked) {
+  return checked.map((kind) => RULE_LABELS[kind] ?? kind).join(", ");
+}
+
 /** The packager normalises line endings, so comparisons must too. */
 function normalize(text) {
   return typeof text === "string" ? text.replace(/\r\n/g, "\n") : text;
@@ -61,15 +72,31 @@ function packagedCssMatchesSource(packagedCss, stylesheetSource) {
 }
 
 /**
- * Pure. Returns a list of problems; empty means the archive was built from these sources.
+ * Pure. Returns `{ problems, checked }`.
  *
- * Each source is optional: pass only what you can read. A source that is absent is not
- * evidence of staleness, so it is skipped rather than reported.
+ * `problems` is empty when nothing contradicts freshness. `checked` lists the rules that
+ * actually had both inputs and therefore reached a conclusion.
+ *
+ * BOTH are load-bearing, and returning only `problems` was a real defect. Each source is
+ * optional, because a source that cannot be read is not evidence of staleness — but that
+ * makes an empty `problems` ambiguous between "every rule ran and agreed" and "no rule
+ * ran at all". A caller that reads only `problems` therefore reports FRESH on zero
+ * evidence, which is the failure this module exists to prevent, reintroduced one level up
+ * in the composition. Verified: with both sources hidden and a genuinely stale archive,
+ * the guard printed "Packaged content matches the current sources" and then leaked 15
+ * geometry failures.
+ *
+ * No-evidence is safe only while something else still concludes. `checked` is what lets a
+ * caller know whether anything did. This matters most where the fewest rules apply: a
+ * repository whose packager does not concatenate the bundle has only the CSS rule, so it
+ * is one unreadable file away from silence.
  */
 function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, bundleSource } = {}) {
   const problems = [];
+  const checked = [];
 
   if (typeof packagedCss === "string" && typeof stylesheetSource === "string") {
+    checked.push(STALE_CSS);
     if (!packagedCssMatchesSource(packagedCss, stylesheetSource)) {
       problems.push({
         kind: STALE_CSS,
@@ -81,6 +108,7 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
   }
 
   if (typeof packagedJs === "string" && typeof bundleSource === "string") {
+    checked.push(STALE_JS);
     // Not equality: the packager appends the plugin registration after the bundle.
     const expected = normalize(bundleSource);
     if (!normalize(packagedJs).startsWith(expected)) {
@@ -93,7 +121,7 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
     }
   }
 
-  return problems;
+  return { problems, checked };
 }
 
 /**
@@ -113,11 +141,31 @@ function formatStaleArtifactError(archiveLabel, problems) {
   ].join("\n");
 }
 
+/**
+ * The message for the case where nothing could be checked. Distinct from the stale
+ * message on purpose: "I could not tell" is a different claim from "these disagree", and
+ * collapsing them would put the reader back to guessing.
+ */
+function formatUnverifiableArtifactError(archiveLabel, sourceLabels) {
+  return [
+    `${archiveLabel} could not be checked for staleness: none of its sources were readable ` +
+      `(${sourceLabels.join(", ")}).`,
+    "",
+    "Run `npm run package` from a complete checkout and re-run this check.",
+    "",
+    "This is refused rather than assumed fresh. The render check measures the packaged",
+    "bytes, so proceeding here would report real geometry for content nothing has",
+    "confirmed is current — which is exactly the failure this guard exists to prevent."
+  ].join("\n");
+}
+
 module.exports = {
   STALE_CSS,
   STALE_JS,
+  describeCheckedRules,
   findStalePackagedContent,
   formatStaleArtifactError,
+  formatUnverifiableArtifactError,
   normalize,
   packagedCssMatchesSource
 };

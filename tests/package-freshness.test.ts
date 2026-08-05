@@ -4,8 +4,10 @@ import path from "node:path";
 const {
   STALE_CSS,
   STALE_JS,
+  describeCheckedRules,
   findStalePackagedContent,
   formatStaleArtifactError,
+  formatUnverifiableArtifactError,
   packagedCssMatchesSource
 } = require("../scripts/package-freshness");
 
@@ -38,13 +40,13 @@ describe("stale packaged artifact guard", () => {
         stylesheetSource: stylesheet,
         packagedJs,
         bundleSource: bundle
-      })
+      }).problems
     ).toEqual([]);
   });
 
   test("fires when the packaged CSS is an older stylesheet", () => {
     // The exact shape of the incident: the archive predates the caption/sticky fixes.
-    const problems = findStalePackagedContent({
+    const { problems } = findStalePackagedContent({
       packagedCss: ".atlyn-cohort-visual {\n}\n",
       stylesheetSource: stylesheet,
       packagedJs,
@@ -57,7 +59,7 @@ describe("stale packaged artifact guard", () => {
   });
 
   test("fires when the packaged bundle is not the current dist/visual.js", () => {
-    const problems = findStalePackagedContent({
+    const { problems } = findStalePackagedContent({
       packagedCss: stylesheet,
       stylesheetSource: stylesheet,
       packagedJs: "var Something = {};\n/* plugin registration */\n",
@@ -68,7 +70,7 @@ describe("stale packaged artifact guard", () => {
   });
 
   test("reports both when both are stale", () => {
-    const problems = findStalePackagedContent({
+    const { problems } = findStalePackagedContent({
       packagedCss: "/* old */\n",
       stylesheetSource: stylesheet,
       packagedJs: "var Old = {};\n",
@@ -83,7 +85,7 @@ describe("stale packaged artifact guard", () => {
     // content.js is dist/visual.js PLUS the plugin registration, so the bundle is a
     // strict prefix. An equality rule here would fire on every correct package.
     expect(
-      findStalePackagedContent({ packagedJs: `${bundle}// appended`, bundleSource: bundle })
+      findStalePackagedContent({ packagedJs: `${bundle}// appended`, bundleSource: bundle }).problems
     ).toEqual([]);
   });
 
@@ -92,16 +94,43 @@ describe("stale packaged artifact guard", () => {
       findStalePackagedContent({
         packagedCss: "a {\n  b: c;\n}\n",
         stylesheetSource: "a {\r\n  b: c;\r\n}\r\n"
-      })
+      }).problems
     ).toEqual([]);
   });
 
   test("treats an unreadable source as no evidence rather than as staleness", () => {
-    // A tree that was never built has no dist/visual.js. That is not a stale archive.
-    expect(
-      findStalePackagedContent({ packagedCss: stylesheet, stylesheetSource: stylesheet })
-    ).toEqual([]);
-    expect(findStalePackagedContent({})).toEqual([]);
+    // A tree that was never built has no dist/visual.js. That is not a stale archive, so
+    // the JS rule reports nothing — but it also does not claim to have checked it.
+    const partial = findStalePackagedContent({
+      packagedCss: stylesheet,
+      stylesheetSource: stylesheet
+    });
+    expect(partial.problems).toEqual([]);
+    expect(partial.checked).toEqual([STALE_CSS]);
+  });
+
+  test("reports which rules actually concluded, so no evidence is distinguishable from agreement", () => {
+    // THE defect this shape exists to make unwriteable. `problems: []` alone is ambiguous
+    // between "every rule ran and agreed" and "no rule ran at all". A caller reading only
+    // `problems` therefore reports FRESH on zero evidence — verified against a genuinely
+    // stale archive with both sources hidden, which printed "Packaged content matches the
+    // current sources" and then leaked 15 geometry failures.
+    const nothing = findStalePackagedContent({});
+    expect(nothing.problems).toEqual([]);
+    expect(nothing.checked).toEqual([]);
+
+    const everything = findStalePackagedContent({
+      packagedCss: stylesheet,
+      stylesheetSource: stylesheet,
+      packagedJs,
+      bundleSource: bundle
+    });
+    expect(everything.problems).toEqual([]);
+    expect(everything.checked).toEqual([STALE_CSS, STALE_JS]);
+
+    // Same `problems`, opposite meaning. Only `checked` separates them.
+    expect(nothing.problems).toEqual(everything.problems);
+    expect(nothing.checked).not.toEqual(everything.checked);
   });
 
   test("explains the fix and denies being a defect in the visual", () => {
@@ -109,11 +138,32 @@ describe("stale packaged artifact guard", () => {
     // that is the confusion it exists to prevent.
     const message = formatStaleArtifactError(
       "dist/atlyn-cohort-retention.pbiviz",
-      findStalePackagedContent({ packagedCss: "/* old */\n", stylesheetSource: stylesheet })
+      findStalePackagedContent({ packagedCss: "/* old */\n", stylesheetSource: stylesheet }).problems
     );
     expect(message).toContain("dist/atlyn-cohort-retention.pbiviz is stale");
     expect(message).toContain("npm run package");
     expect(message).toContain("NOT a defect in the visual");
+  });
+
+  test("names the content each rule covers, not the rule's internal kind", () => {
+    // "Packaged content matches the current sources (stale-css)" reads like a defect
+    // report in a success message.
+    expect(describeCheckedRules([STALE_CSS])).toBe("content.css");
+    expect(describeCheckedRules([STALE_CSS, STALE_JS])).toBe("content.css, content.js");
+    expect(describeCheckedRules([])).toBe("");
+  });
+
+  test("says 'could not check' rather than 'stale' when nothing was verifiable", () => {
+    // Two different claims. Collapsing them would put the reader back to guessing which
+    // of "these disagree" and "I could not tell" they are looking at.
+    const message = formatUnverifiableArtifactError("dist/atlyn-cohort-retention.pbiviz", [
+      "style/visual.less",
+      "dist/visual.js"
+    ]);
+    expect(message).toContain("could not be checked for staleness");
+    expect(message).toContain("style/visual.less");
+    expect(message).toContain("npm run package");
+    expect(message).not.toContain("is stale:");
   });
 });
 
@@ -130,6 +180,38 @@ describe("the guard is wired into the render check", () => {
     expect(guardAt).toBeGreaterThan(-1);
     expect(harnessAt).toBeGreaterThan(-1);
     expect(guardAt).toBeLessThan(harnessAt);
+  });
+
+  test("refuses to proceed when no rule could conclude", () => {
+    // The caller consumes `checked`, not just `problems`. Reading only `problems` is what
+    // let it report freshness on zero evidence.
+    const check = fs.readFileSync(path.join(root, "scripts", "render-check.js"), "utf8");
+    expect(check).toContain("checked.length === 0");
+    expect(check).toContain("formatUnverifiableArtifactError");
+    expect(check).toMatch(/const \{ problems, checked \} = findStalePackagedContent/);
+  });
+
+  test("imports every freshness helper it uses", () => {
+    // The wiring tests above match strings, so they cannot catch a name used but never
+    // imported. That is not hypothetical: `describeCheckedRules` was added to the log
+    // line and left out of the require, and every string assertion still passed while
+    // `npm run render:check` died with a ReferenceError before rendering anything.
+    const check = fs.readFileSync(path.join(root, "scripts", "render-check.js"), "utf8");
+    const freshness = require("../scripts/package-freshness");
+
+    const destructured = /const \{([^}]*)\} = require\("\.\/package-freshness"\)/.exec(check);
+    expect(destructured).not.toBeNull();
+    const imported = destructured![1]
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    expect(imported.length).toBeGreaterThan(0);
+    imported.forEach((name) => expect(Object.keys(freshness)).toContain(name));
+
+    // And every helper referenced in the file is one of them.
+    Object.keys(freshness)
+      .filter((name) => check.includes(`${name}(`))
+      .forEach((name) => expect(imported).toContain(name));
   });
 
   test("still refuses to run at all when the package is missing", () => {
