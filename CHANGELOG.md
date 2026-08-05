@@ -2,6 +2,34 @@
 
 ## 1.0.1.0
 
+- **Fixed the `.pbiviz` package layout, which Power BI could not have loaded.** A `.pbiviz` is
+  a two-entry zip — a `package.json` manifest plus the `resources/<GUID>.pbiviz.json` it points
+  at through `resources[].file` and `metadata.pbivizjson.resourceId` — and the host reads the
+  visual's JavaScript and CSS from that resource's `content`. This repository was instead
+  shipping a **source-tree-shaped archive** (`pbiviz.json`, `capabilities.json`,
+  `style/visual.less`, `visual.js`, `assets/icon.png`, `stringResources/**`) with no manifest
+  and no `resources/` folder, so there was nothing for the host to resolve and nothing in the
+  archive would have been read. The layout was never validated against Power BI Desktop.
+- The correct builder already existed in `scripts/generate-sample-report.js`, which emitted the
+  proper two files to embed the visual in the sample report. It is now extracted to
+  `scripts/visual-package.js` and shared with `scripts/package.js`, so the standalone package
+  and the embedded copy cannot drift. The refactor is byte-preserving: the regenerated sample
+  report is unchanged.
+- `scripts/package.js` now builds the archive in memory with sorted entries, a pinned DOS
+  timestamp, fixed permissions, and no directory entries, dropping the dependency on external
+  `zip` / `Compress-Archive` producers that previously disagreed about directory entries.
+- Added a loadability gate. `tests/packaging.test.ts` reads the built `.pbiviz`, follows the
+  manifest indirection, evaluates `content.js`, asserts the plugin registers and instantiates,
+  injects `content.css` the way the host does, and asserts the visual renders grid cells with
+  the stylesheet applied. `scripts/certification-audit.js` asserts the archive holds exactly
+  the two expected entries and validates the manifest fields. Rebuilding in the old flat layout
+  fails all three tests and the audit.
+- The packaged artifact is
+  `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` at 20,567 bytes, with
+  3,524 bytes of CSS inline as `content.css`. Every hash recorded earlier during this work
+  belongs to the unloadable flat archive and must not be published. Nothing was ever
+  distributed at `1.0.1.0`, so this stays within the same version bump.
+
 - **Bumped the visual version from `1.0.0.0` to `1.0.1.0`** (`pbiviz.json` `visual.version`,
   `package.json` `1.0.1`). The GUID `d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` is unchanged.
 - **This release supersedes the v1.0.0.0 storefront artifact.** The owner's storefront is

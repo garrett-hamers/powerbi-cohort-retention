@@ -4,17 +4,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const JSZip = require("jszip");
 const { compareNames, getSourceManifest } = require("./package-manifest");
+const { buildVisualPackage, resourceEntryName } = require("./visual-package");
 
 const root = path.resolve(__dirname, "..");
 const dist = path.join(root, "dist");
-const staging = path.join(root, ".package-staging");
 const temporary = path.join(root, ".tmp");
 const output = path.join(dist, "atlyn-cohort-retention.pbiviz");
-
-function copy(source, destination) {
-  fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.copyFileSync(source, destination);
-}
 
 function run(command, args, options = {}) {
   childProcess.execFileSync(command, args, {
@@ -23,42 +18,25 @@ function run(command, args, options = {}) {
   });
 }
 
-function normalizeTimestamps(directory) {
-  const reproducibleTimestamp = new Date("1980-01-01T12:00:00.000Z");
-  const entries = [];
+/**
+ * Builds the `.pbiviz` in the format Power BI actually loads: a two-entry zip holding the
+ * manifest and the resource it points at. See `scripts/visual-package.js` for why.
+ *
+ * The archive is written deterministically — entries in sorted order, a fixed DOS timestamp,
+ * fixed permissions, no directory entries, no archive comment — so two runs on any platform
+ * produce byte-identical output. Directory entries in particular are emitted by `zip -qr` but
+ * not by `Compress-Archive`, so including them would break cross-platform reproducibility.
+ */
+async function buildPackage(descriptor, definition) {
+  const guid = descriptor.visual.guid;
+  const entries = [
+    ["package.json", `${JSON.stringify(descriptor, null, 2)}\n`],
+    [resourceEntryName(guid), JSON.stringify(definition)]
+  ].sort(([left], [right]) => compareNames(left, right));
 
-  function collect(currentDirectory) {
-    for (const entry of fs.readdirSync(currentDirectory, { withFileTypes: true })) {
-      const fullPath = path.join(currentDirectory, entry.name);
-      entries.push(fullPath);
-      if (entry.isDirectory()) collect(fullPath);
-    }
-  }
-
-  collect(directory);
-  entries.sort(compareNames);
-  for (const entry of entries) {
-    fs.utimesSync(entry, reproducibleTimestamp, reproducibleTimestamp);
-  }
-}
-
-async function normalizePackage() {
-  const source = await JSZip.loadAsync(fs.readFileSync(output));
-  const normalized = new JSZip();
-  const entries = Object.values(source.files).sort((left, right) => compareNames(left.name, right.name));
-  const names = new Set();
-
-  for (const entry of entries) {
-    const name = entry.name.replace(/^(\.\/)+/, "");
-    if (!name) continue;
-    // Directory entries carry no content and are emitted inconsistently by zip
-    // producers: `zip -qr` writes them, `Compress-Archive` does not. Dropping them
-    // makes the artifact byte-identical across platforms without changing what a
-    // consumer reads, since every file entry already carries its full path.
-    if (entry.dir) continue;
-    if (names.has(name)) throw new Error(`Duplicate package entry after normalization: ${name}`);
-    names.add(name);
-    normalized.file(name, await entry.async("nodebuffer"), {
+  const archive = new JSZip();
+  for (const [name, contents] of entries) {
+    archive.file(name, contents, {
       date: new Date("2000-01-01T00:00:00.000Z"),
       createFolders: false,
       unixPermissions: 0o644,
@@ -66,70 +44,56 @@ async function normalizePackage() {
     });
   }
 
+  const bytes = await archive.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 9 },
+    platform: "DOS",
+    streamFiles: false,
+    comment: ""
+  });
+
   const temporaryOutput = `${output}.${process.pid}.tmp`;
   fs.rmSync(temporaryOutput, { force: true });
   try {
-    const bytes = await normalized.generateAsync({
-      type: "nodebuffer",
-      compression: "DEFLATE",
-      compressionOptions: { level: 9 },
-      platform: "DOS",
-      streamFiles: false,
-      comment: ""
-    });
     fs.writeFileSync(temporaryOutput, bytes, { flag: "wx" });
     fs.rmSync(output, { force: true });
     fs.renameSync(temporaryOutput, output);
   } finally {
     fs.rmSync(temporaryOutput, { force: true });
   }
+
+  return entries.map(([name]) => name);
 }
 
 async function main() {
   fs.rmSync(dist, { recursive: true, force: true });
-  fs.rmSync(staging, { recursive: true, force: true });
   fs.rmSync(temporary, { recursive: true, force: true });
-  fs.mkdirSync(staging, { recursive: true });
   try {
     if (process.platform === "win32") {
       run(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "npx webpack --mode production"]);
     } else {
       run("npx", ["webpack", "--mode", "production"]);
     }
-    copy(path.join(root, "pbiviz.json"), path.join(staging, "pbiviz.json"));
-    copy(path.join(root, "capabilities.json"), path.join(staging, "capabilities.json"));
-    copy(path.join(root, "style", "visual.less"), path.join(staging, "style", "visual.less"));
-    copy(path.join(dist, "visual.js"), path.join(staging, "visual.js"));
-    copy(path.join(root, "assets", "icon.png"), path.join(staging, "assets", "icon.png"));
-    fs.cpSync(path.join(root, "stringResources"), path.join(staging, "stringResources"), {
-      recursive: true
-    });
-    normalizeTimestamps(staging);
-    fs.rmSync(output, { force: true });
-    if (process.platform === "win32") {
-      run("powershell.exe", [
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        `Compress-Archive -Path '${staging}\\*' -DestinationPath '${output}' -Force`
-      ]);
-    } else {
-      run("zip", ["-X", "-qr", output, "."], { cwd: staging });
-    }
-    await normalizePackage();
+
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
+    const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8"));
+    const { descriptor, definition } = buildVisualPackage(pbiviz, capabilities);
+    const packageFiles = await buildPackage(descriptor, definition);
+
     const sourceManifest = getSourceManifest(root);
     const metadata = {
-      guid: JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8")).visual.guid,
-      privileges: JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8")).privileges,
+      guid: pbiviz.visual.guid,
+      privileges: capabilities.privileges,
       sourceFiles: sourceManifest.files,
       sourceSha256: sourceManifest.sha256,
+      packageFiles,
       package: path.relative(root, output),
       packageSha256: crypto.createHash("sha256").update(fs.readFileSync(output)).digest("hex")
     };
     fs.writeFileSync(path.join(dist, "package-metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
     console.log(`Created ${path.relative(root, output)}`);
   } finally {
-    fs.rmSync(staging, { recursive: true, force: true });
     fs.rmSync(temporary, { recursive: true, force: true });
   }
 }

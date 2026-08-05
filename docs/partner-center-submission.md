@@ -337,71 +337,93 @@ the one-time Power BI Desktop step above, before submitting.
 | Visual version | `1.0.1.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` |
-| Size | 20,899 bytes |
+| SHA-256 | `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` |
+| Size | 20,567 bytes |
+| Packaged CSS | 3,524 bytes, inline as `content.css` |
 
 The packaged filename carries no version segment — `scripts/package.js` writes a fixed
 `dist/atlyn-cohort-retention.pbiviz` — so only the version-keyed storefront path changes.
 
-**Why the version was bumped to `1.0.1.0`.** The owner's storefront is already
-distributing an artifact at the version-keyed path
-`cohort-retention/1.0.0.0/atlyn-cohort-retention.pbiviz`, SHA-256
-`6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` at 20,950 bytes.
-`assets/icon.png` and `pbiviz.json` are both packaged inputs
-(`scripts/package-manifest.js`), so replacing the 1 x 1 placeholder icon and
-correcting the submission metadata necessarily produced different bytes. Two
-different files must not share one version number, so `visual.version` is now
-`1.0.1.0` and this build supersedes the published v1.0.0.0 artifact. The GUID
-`d9f6b5a2-1f84-4b6d-a0f7-8c2c4e2e6a11` is deliberately unchanged.
+### The package layout was wrong, and is fixed
+
+**A `.pbiviz` is not a zip of the source tree.** `generatePbiviz()` in
+`node_modules/powerbi-visuals-webpack-plugin/src/index.js` writes exactly two entries:
+
+```text
+package.json                  <- the manifest (templates/package-json-template.js)
+resources/<GUID>.pbiviz.json  <- the whole visual inline: content.js, content.css,
+                                 iconBase64, capabilities, stringResources
+```
+
+The manifest points at the resource through `resources[].file` plus
+`metadata.pbivizjson.resourceId`, with `sourceType: 5`. The host reads the manifest, follows
+that indirection, and takes the visual's JavaScript and CSS from `content`.
+
+Through v1.0.1.0 this repository instead shipped a **source-tree-shaped archive** —
+`pbiviz.json`, `capabilities.json`, `style/visual.less`, `visual.js`, `assets/icon.png`,
+`stringResources/**` — with no `package.json` manifest and no `resources/` folder. There was
+nothing for the host to resolve, so **nothing in the archive would have been read**, including
+the stylesheet. This was never validated against Power BI; the dossier has always recorded
+that the project has not been opened in Desktop from this repository.
+
+The inconsistency was visible inside the repository: `scripts/generate-sample-report.js`
+already emitted the correct two-file layout to embed the visual in the sample report, under a
+comment calling it "the two files Power BI reads". Only the standalone `.pbiviz` diverged.
+
+That builder is now shared. `scripts/visual-package.js` is the single source of truth, used by
+`scripts/package.js` for the `.pbiviz` and by `scripts/generate-sample-report.js` for the
+embedded copy, so the two cannot drift again. The refactor was verified byte-preserving: the
+regenerated sample report is unchanged.
+
+### Verified loadable
+
+`tests/packaging.test.ts` loads the built `.pbiviz`, reads `package.json`, follows the
+`metadata.pbivizjson.resourceId` indirection to the declared resource, evaluates
+`content.js`, asserts the plugin registers under the GUID, instantiates it through
+`plugin.create()`, injects `content.css` the way the host does, and asserts the visual renders
+grid cells with the stylesheet applied (`display: flex`). Rebuilding the archive in the old
+flat layout fails all three of those tests and the certification audit.
+
+This is the strongest available check short of Power BI Desktop itself: the artifact is proven
+to load and render **from its own bytes**, through the same manifest indirection the host uses.
 
 ### Reproducibility scope
 
 `npm run package` is byte-for-byte reproducible: `scripts/reproducibility-check.js`
-packages twice and fails if the two artifacts differ. Every packaging run prints
-the hash, byte size, platform, Node version, and zlib version, and writes the hash
-to `dist/package-metadata.json` as `packageSha256`.
+packages twice and fails if the two artifacts differ. Every packaging run prints the hash,
+byte size, platform, Node version, and zlib version, and writes the hash to
+`dist/package-metadata.json` as `packageSha256`.
 
-Cross-platform determinism was **not** true before the v1.0.1.0 preparation. The
-Linux packaging path uses `zip -X -qr` and the Windows path uses `Compress-Archive`,
-and those two producers disagree about whether to emit explicit **directory
-entries**. `zip` writes them, `Compress-Archive` does not, and the normalizer
-preserved that difference. Five redundant directory entries at roughly 98 bytes each
-accounted for the 490-byte gap previously observed between CI (21,424 bytes) and a
-Windows build (20,934 bytes).
-
-`normalizePackage` in `scripts/package.js` now drops directory entries entirely.
-They carry no content and every file entry already stores its full path, so no
-consumer is affected. Combined with the `.gitattributes` LF pin — which stops a
-Windows checkout from silently changing the byte-hashed package inputs
-`pbiviz.json`, `capabilities.json`, `style/visual.less`, and `stringResources/**` —
-the packaged artifact is identical on every platform.
+The archive is now built directly in memory with sorted entries, a fixed DOS timestamp, fixed
+permissions, no directory entries, and no archive comment. That removes the previous
+dependency on external `zip` / `Compress-Archive` producers, which disagreed about emitting
+directory entries and once accounted for a 490-byte gap between Linux and Windows builds.
+Combined with the `.gitattributes` LF pin, the artifact is identical on every platform.
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` | 20,899 bytes |
-| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` | 20,899 bytes |
+| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` | 20,567 bytes |
+| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5` | 20,567 bytes |
 
-**Confirmed identical**, so `9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8`
-at 20,899 bytes is the value to publish in the release manifest, under the
-`cohort-retention/1.0.1.0/` path. The two environments run different Node and zlib
-versions and still agree, which disproves the earlier assumption that zlib was the
-cause of the divergence.
+**Confirmed identical**, so `297b68c86cfef7faa3f017e3713f639a7f510abd36e9791b29c2a0ab76b481a5`
+at 20,567 bytes is the value to publish in the release manifest, under
+`cohort-retention/1.0.1.0/`.
 
-If the values ever diverge again, take the authoritative hash and byte size from
-`dist/package-metadata.json` of the build whose `.pbiviz` you actually upload, and
-never mix a hash from one environment with a binary from another.
+If the values ever diverge, take the authoritative hash and byte size from
+`dist/package-metadata.json` of the build whose `.pbiviz` you actually upload, and never mix a
+hash from one environment with a binary from another.
 
-For reference, earlier values that must **not** be published are
-`3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` (20,898 bytes,
-the v1.0.0.0 build after the icon replacement, superseded by this version bump),
-`e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` (20,934 bytes,
-before line-ending normalization) and
-`e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` (21,424 bytes,
-CI, before the directory-entry fix).
+**Do not publish any earlier hash.** Every one of them belongs to the unloadable flat-layout
+archive: `6a4e1bb8d3778d84adc2bf841b3dbc382d0bd33932a8dc494dbee25e48247c43` (20,950 bytes, the
+artifact currently on the storefront at `cohort-retention/1.0.0.0/`),
+`9d079c51f7bf8e3b955d4fa64264b97863f1991f68b1eb5afe3487e13f012fb8` (20,899 bytes),
+`3ada28d606b4a3c3ddceb44bbae388138da5943cd09d508636b1af6b07f1ada3` (20,898 bytes),
+`e6c78f437c315b1c1960f5fa3e1287a56ede1896ae55c259ee760753b7b0b5ad` (20,934 bytes), and
+`e87054e848ecdc7c2ca7426f3abc2c93817a81e3109afd6c831a25f568182a85` (21,424 bytes).
 
 The 300 x 300 logo, the screenshots, and the entire `samples/` sample report are
-Partner Center **listing** assets and are intentionally not added to the `.pbiviz`
-package inputs, so the package file list is unchanged:
+Partner Center **listing** assets and are intentionally not packaged inputs. The packaged
+inputs — the files whose bytes feed the two archive entries — are unchanged:
 
 ```text
 assets/icon.png
@@ -413,7 +435,7 @@ style/visual.less
 visual.js
 ```
 
-`tests/sample-report.test.ts` asserts this exact list, so adding the sample report
+`tests/sample-report.test.ts` asserts this exact input list, so adding the sample report
 cannot silently change the packaged artifact.
 
 ## 9a. Stylesheet packaging
@@ -423,26 +445,24 @@ built package:
 
 | Artifact | Where the CSS lives | Bytes |
 | --- | --- | --- |
-| `dist/atlyn-cohort-retention.pbiviz` | `style/visual.less` entry | 3,524 |
+| `dist/atlyn-cohort-retention.pbiviz` | `content.css` in `resources/<GUID>.pbiviz.json` | 3,524 |
 | `samples/…/CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json` | `content.css` | 3,524 |
 
 Both are byte-identical to `style/visual.less`, and `content.css` is the field Power BI
-injects as the visual's stylesheet.
+injects as the visual's stylesheet. Both are produced by the same
+`scripts/visual-package.js` builder.
 
 This project packages by hand rather than through `powerbi-visuals-webpack-plugin`. That
 plugin derives `content.css` from a **webpack-emitted CSS asset**, which is why a
 `pbiviz new` scaffold imports the stylesheet from `src/visual.ts` and configures a
-less-loader chain — the `style` field in `pbiviz.json` is inert metadata there. This
-repository instead reads `style/visual.less` from disk directly, in `scripts/package.js`
-(which copies it into the package and byte-hashes it through
-`scripts/package-manifest.js`) and in `scripts/generate-sample-report.js` (which inlines it
-into `content.css`). So there is no webpack import and no loader chain, and the CSS still
-ships.
+less-loader chain. Here `scripts/visual-package.js` reads `style/visual.less` from disk and
+inlines it into `content.css` directly, so no webpack import and no loader chain is needed to
+get the CSS into the package — the byte counts above are read back out of the built artifacts.
 
 **The standing hazard is that nothing compiles it.** Shipping the file verbatim is correct
 only while it contains no LESS-only syntax — today it is plain CSS, and rendering it through
 the real LESS compiler is a whitespace-only no-op. `scripts/certification-audit.js` now pins
-that invariant: it asserts the packaged stylesheet is present, non-empty, byte-identical to
+that invariant: it asserts the packaged `content.css` is present, non-empty, byte-identical to
 the source, and contains real declarations; that the embedded `content.css` is non-empty and
 not stale; that the screenshot harness still links it; and that LESS compilation leaves the
 file unchanged. Adding a variable, mixin, nested rule, or `//` comment therefore fails the
