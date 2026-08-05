@@ -333,8 +333,8 @@ This repository still does not use the CLI's package compiler as its package pro
 | Visual version | `1.0.1.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `dc732f837be1c849f55b9ac4c997f0270c5c4c4f7ac32993bda9b229ef972c54` |
-| Size | 24,047 bytes |
+| SHA-256 | `fec402c9147ffc8a3a45244fe803941499e83b0401e755408fed7f655da06486` |
+| Size | 24,361 bytes |
 | Packaged `visual.css` | 4,898 bytes |
 
 Every CI run prints these to the job log and the run summary, and uploads the exact
