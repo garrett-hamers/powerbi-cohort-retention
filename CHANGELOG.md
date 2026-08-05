@@ -30,7 +30,7 @@
   the `resources/<GUID>.pbiviz.json` entry name.
 - **The packaged bytes changed**, because `pbiviz.json` is a packaged input and the GUID appears in
   the manifest, the resource entry name, and the plugin registration inside `content.js`. The new
-  artifact is `7a0970e48d5a057f1345de75b162f51f80bf14d031f80bd3e0a5c5621c039c02` at 20,599 bytes,
+  artifact is `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` at 20,684 bytes,
   with 3,524 bytes of CSS still inline as `content.css`. Nothing was ever distributed at `1.0.1.0`,
   so this stays within the same version.
 - **Resolved the open GUID risk** carried in the 1.0.1.0 notes and in

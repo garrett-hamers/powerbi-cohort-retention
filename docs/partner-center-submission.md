@@ -343,8 +343,8 @@ kind — it is a normal smoke test, not a format risk.
 | Visual version | `1.0.1.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `RECOMPUTE` |
-| Size | RECOMPUTE bytes |
+| SHA-256 | `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` |
+| Size | 20,684 bytes |
 | Packaged CSS | 3,524 bytes, inline as `content.css` |
 | Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
@@ -427,18 +427,19 @@ byte size, platform, Node version, and zlib version, and writes the hash to
 `dist/package-metadata.json` as `packageSha256`.
 
 The archive is now built directly in memory with sorted entries, a fixed DOS timestamp, fixed
-permissions, no directory entries, and no archive comment. That removes the previous
-dependency on external `zip` / `Compress-Archive` producers, which disagreed about emitting
-directory entries and once accounted for a 490-byte gap between Linux and Windows builds.
+permissions, the single `resources/` directory entry the official packager emits, and no
+archive comment. That removes the previous dependency on external `zip` / `Compress-Archive`
+producers, which disagreed about emitting directory entries and once accounted for a 490-byte
+gap between Linux and Windows builds.
 Combined with the `.gitattributes` LF pin, the artifact is identical on every platform.
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `RECOMPUTE` | RECOMPUTE bytes |
-| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `RECOMPUTE` | RECOMPUTE bytes |
+| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` | 20,684 bytes |
+| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` | 20,684 bytes |
 
-**Confirmed identical**, so `RECOMPUTE`
-at RECOMPUTE bytes is the value to publish in the release manifest, under
+**Confirmed identical**, so `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f`
+at 20,684 bytes is the value to publish in the release manifest, under
 `cohort-retention/1.0.1.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from
