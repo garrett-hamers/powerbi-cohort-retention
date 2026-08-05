@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **Closed the recorded-hash gap.** The packaged `.pbiviz` SHA-256 and byte size, and the
+  icon, logo, and screenshot hashes, are quoted in `docs/partner-center-submission.md` and
+  in this file, and nothing verified any of them. A stale value did not fail the build — it
+  sat there looking authoritative, and the packaged hash is precisely the number a human
+  copies into the storefront release manifest when publishing. This is the same
+  record-it-but-never-assert-it pattern that previously let the stylesheet ship empty and
+  let sticky geometry go unmeasured.
+- `scripts/doc-hash-gate.js` now runs inside `npm run package` from
+  `scripts/certification-audit.js`. It hashes the artifacts on disk in the same run and
+  reports, with file and line: a recorded hash matching no current artifact and not
+  registered as historical; a byte size that disagrees with its artifact, including one
+  stranded on a different table row; a hash attached to a path it does not belong to; a
+  required file that no longer records the current value; and a live value listed among the
+  hashes that must never be published.
+- **"Every hash must equal the current one" would be the wrong rule** — the dossier lists
+  superseded hashes deliberately, so nobody republishes them. The gate parses that list out
+  of the dossier's own "Do not publish any earlier hash" paragraph instead of duplicating it
+  into code, so the document stays the single source of truth and a byte change means
+  *moving* the old value into that paragraph rather than overwriting it.
+- Running it immediately found a real omission: `7d4fc5de…` (20,652 bytes, the first correct
+  two-entry layout) was quoted in this changelog but was never added to the dossier's
+  superseded list, which claims to enumerate them. It is now registered.
+- `tests/doc-hashes.test.ts` holds the gate to its own standard, since a guard that cannot
+  fail is the defect it exists to prevent: 13 tests covering each drift kind and each
+  legitimate case it must not flag. Verified live as well, by corrupting a real recorded
+  hash and a real byte size and confirming the build fails with the file, the line, the
+  wrong value, and the right one.
+
 - **Fixed three CSS defects that were live on `main`.** They had been dormant for months
   because the packaged `.pbiviz` had a broken structure and the stylesheet never reached
   Power BI; fixing the package layout shipped `content.css` for the first time and activated
