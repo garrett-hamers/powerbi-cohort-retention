@@ -85,14 +85,19 @@ function packagedCssMatchesSource(packagedCss, stylesheetSource) {
  * could not be read while holding it. The verdict was right and the attribution was not.
  * Naming the rule is true in every case, and matches the vocabulary the success message
  * uses, so one mechanism is not described two ways depending on which path you land on.
+ *
+ * Returns a plain array, not `{ problems, checked }`. Callers that want to know which
+ * rules ran call `applicableFreshnessRules` — the same function this one uses to decide,
+ * so the two cannot disagree — and a second return value would be one a caller could read
+ * while ignoring the problems, which is the shape that produced the original defect.
  */
-function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, bundleSource } = {}) {
+function findStalePackagedContent(sources = {}) {
+  const { packagedCss, stylesheetSource, packagedJs, bundleSource } = sources;
+  const applicable = applicableFreshnessRules(sources);
   const problems = [];
   const couldNotRun = [];
-  let concluded = 0;
 
-  if (typeof packagedCss === "string" && typeof stylesheetSource === "string") {
-    concluded += 1;
+  if (applicable.includes(STALE_CSS)) {
     if (!packagedCssMatchesSource(packagedCss, stylesheetSource)) {
       problems.push({
         kind: STALE_CSS,
@@ -102,11 +107,10 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
       });
     }
   } else {
-    couldNotRun.push("the CSS rule (content.css against style/visual.less)");
+    couldNotRun.push(RULE_DESCRIPTIONS[STALE_CSS]);
   }
 
-  if (typeof packagedJs === "string" && typeof bundleSource === "string") {
-    concluded += 1;
+  if (applicable.includes(STALE_JS)) {
     // Not equality: the packager appends the plugin registration after the bundle.
     const expected = normalize(bundleSource);
     if (!normalize(packagedJs).startsWith(expected)) {
@@ -118,10 +122,10 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
       });
     }
   } else {
-    couldNotRun.push("the JS rule (content.js against dist/visual.js)");
+    couldNotRun.push(RULE_DESCRIPTIONS[STALE_JS]);
   }
 
-  if (concluded === 0) {
+  if (applicable.length === 0) {
     problems.push({
       kind: NOT_VERIFIABLE,
       message:
@@ -134,19 +138,22 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
 }
 
 /**
- * Which freshness rules could run against a given set of inputs.
+ * THE definition of which rules a given set of inputs can support, used both to decide
+ * what `findStalePackagedContent` evaluates and to describe what a passing run checked.
  *
- * Kept as its own pure function rather than returned from `findStalePackagedContent`,
- * which deliberately returns a plain problem array so no caller can read past the
- * refusal. This answers a different question — not "is anything wrong?" but "what was
- * actually compared?" — and only the success message needs it.
+ * Derived in one place rather than tested independently in each. When the same condition
+ * was written out twice, the two could disagree while each stayed self-consistent, and no
+ * test noticed: tightening only the copy inside `findStalePackagedContent` left all 23
+ * green while producing
  *
- * That message needs it because a hardcoded list lies about a partial run. With only
- * `style/visual.less` readable, printing "(content.css, content.js)" claims a comparison
- * that never happened, which is the same false-assurance shape the guard exists to
- * prevent, surviving one layer up in the reporting. The partial case is routine here:
- * `gh run download` puts the `.pbiviz` into `dist/` without `visual.js`, so the CSS rule
- * is the only one that can run.
+ *   problems            : []
+ *   success line prints : ...matches the current sources (content.css, content.js)
+ *   CSS rule            : skipped
+ *
+ * — the success message naming a rule that never ran, which is the exact defect the
+ * message was rewritten to remove, reintroduced through drift one layer down. A rule is
+ * applicable when both of its sides are readable; a source that is absent is not evidence
+ * of staleness, so its rule is skipped rather than reported.
  */
 function applicableFreshnessRules({ packagedCss, stylesheetSource, packagedJs, bundleSource } = {}) {
   const rules = [];
@@ -159,6 +166,12 @@ function applicableFreshnessRules({ packagedCss, stylesheetSource, packagedJs, b
 const RULE_LABELS = {
   [STALE_CSS]: "content.css",
   [STALE_JS]: "content.js"
+};
+
+/** How each rule is named when it could not run. Both sides, because a rule needs both. */
+const RULE_DESCRIPTIONS = {
+  [STALE_CSS]: "the CSS rule (content.css against style/visual.less)",
+  [STALE_JS]: "the JS rule (content.js against dist/visual.js)"
 };
 
 /** Names the content a set of rule kinds covers, e.g. "content.css, content.js". */
