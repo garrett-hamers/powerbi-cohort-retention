@@ -28,6 +28,7 @@
 
 const STALE_CSS = "stale-css";
 const STALE_JS = "stale-js";
+const NOT_VERIFIABLE = "not-verifiable";
 
 /** The packager normalises line endings, so comparisons must too. */
 function normalize(text) {
@@ -64,12 +65,25 @@ function packagedCssMatchesSource(packagedCss, stylesheetSource) {
  * Pure. Returns a list of problems; empty means the archive was built from these sources.
  *
  * Each source is optional: pass only what you can read. A source that is absent is not
- * evidence of staleness, so it is skipped rather than reported.
+ * evidence of staleness, so its rule is skipped rather than reported.
+ *
+ * But "no evidence" must not collapse into "verified". A rule that cannot run concludes
+ * nothing, and if NO rule concludes, an empty problem list would mean the caller proceeds
+ * to measure on the strength of a check that never happened — the same shape as a skipped
+ * fixture reporting a pass. So the rules that actually ran are counted, and zero is
+ * reported as its own problem rather than as freshness.
+ *
+ * This matters most where only one rule can apply. A repo whose packager does not build
+ * `content.js` as `bundle + registration` can only use the CSS rule, and there "no
+ * evidence" is one unreadable file away rather than two.
  */
 function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, bundleSource } = {}) {
   const problems = [];
+  const unreadable = [];
+  let concluded = 0;
 
   if (typeof packagedCss === "string" && typeof stylesheetSource === "string") {
+    concluded += 1;
     if (!packagedCssMatchesSource(packagedCss, stylesheetSource)) {
       problems.push({
         kind: STALE_CSS,
@@ -78,9 +92,12 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
           `style/visual.less (${bytes(normalize(stylesheetSource))} bytes)`
       });
     }
+  } else {
+    unreadable.push("style/visual.less");
   }
 
   if (typeof packagedJs === "string" && typeof bundleSource === "string") {
+    concluded += 1;
     // Not equality: the packager appends the plugin registration after the bundle.
     const expected = normalize(bundleSource);
     if (!normalize(packagedJs).startsWith(expected)) {
@@ -91,6 +108,17 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
           `dist/visual.js (${bytes(expected)} bytes)`
       });
     }
+  } else {
+    unreadable.push("dist/visual.js");
+  }
+
+  if (concluded === 0) {
+    problems.push({
+      kind: NOT_VERIFIABLE,
+      message:
+        `no freshness rule could run: ${unreadable.join(" and ")} could not be read, so ` +
+        "nothing was compared against the packaged content"
+    });
   }
 
   return problems;
@@ -100,8 +128,26 @@ function findStalePackagedContent({ packagedCss, stylesheetSource, packagedJs, b
  * The message is the point. It must name the artifact, the mismatch, and the fix, and it
  * must not read like a defect in the visual — otherwise it recreates the confusion it
  * exists to prevent.
+ *
+ * "Cannot determine" gets its own wording because the operator action is different: a
+ * stale archive means re-package, an unverifiable one means the checkout or build is
+ * incomplete. Telling someone to re-package when the stylesheet is missing sends them
+ * somewhere the problem is not.
  */
 function formatStaleArtifactError(archiveLabel, problems) {
+  const blocking = problems.filter((problem) => problem.kind === NOT_VERIFIABLE);
+  if (blocking.length > 0) {
+    return [
+      `cannot verify ${archiveLabel} is current: ` +
+        `${blocking.map((problem) => problem.message).join("; ")}.`,
+      "",
+      "Restore the working tree and run `npm run package`, then re-run this check.",
+      "",
+      "This is NOT a pass. The freshness rules exist so the render check never measures an",
+      "archive built from different sources than the ones on disk; with none of them able to",
+      "run, that guarantee is absent and measuring would report geometry of unknown content."
+    ].join("\n");
+  }
   return [
     `${archiveLabel} is stale: ${problems.map((problem) => problem.message).join("; ")}.`,
     "",
@@ -114,6 +160,7 @@ function formatStaleArtifactError(archiveLabel, problems) {
 }
 
 module.exports = {
+  NOT_VERIFIABLE,
   STALE_CSS,
   STALE_JS,
   findStalePackagedContent,

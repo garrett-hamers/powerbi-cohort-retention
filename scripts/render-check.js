@@ -543,7 +543,8 @@ function assertPackagedContentIsFresh(packaged) {
     stylesheetSource: fs.existsSync(stylesheetPath) ? fs.readFileSync(stylesheetPath, "utf8") : undefined,
     packagedJs: packaged.js,
     // Absent only when the tree was never built. That is not evidence of staleness, so
-    // the JS rule is skipped rather than reported.
+    // the JS rule is skipped rather than reported — but if NO rule can run, the guard
+    // reports that instead of returning an empty list the caller would read as fresh.
     bundleSource: fs.existsSync(bundlePath) ? fs.readFileSync(bundlePath, "utf8") : undefined
   });
 
