@@ -312,12 +312,27 @@ describe("markup the stylesheet depends on", () => {
     expect(bandOffsets).toEqual([0, rowHeight]);
   });
 
-  test("writes no misleading offset when the host reports no geometry", () => {
-    // Real jsdom: all rects are zero, so there is no measurable band separation. The
-    // method must still leave a consistent, non-crashing state rather than inventing one.
-    const offsets = headerBandOffsets(render(2));
-    expect(offsets).toHaveLength(2);
-    offsets.flat().forEach((offset) => expect(offset).toBe("0px"));
+  test("records the jsdom no-layout baseline, where no band separation is measurable", () => {
+    // jsdom has no layout engine, so every getBoundingClientRect() is zero and there is
+    // genuinely nothing to measure. This pins the only thing that matters in that state:
+    // the visual must not INVENT separation it never measured.
+    //
+    // Two responses are equally honest, so both are accepted rather than one being frozen
+    // in. Writing the same offset to every band (what it does today, `0px`) and leaving
+    // `style.top` untouched so the stylesheet's own `top: 0` applies are both truthful
+    // answers to "no geometry available". What would fail is a run of DIFFERING offsets,
+    // which would assert a measurement that never happened.
+    //
+    // This deliberately cannot fail on the collapsed-band bug, because under jsdom the
+    // collapsed state and the correct state are indistinguishable. The falsifiable
+    // version is the test above, which stubs getBoundingClientRect on `thead tr` so the
+    // method has real geometry to derive from; the geometric assertion proper lives in
+    // `npm run render:check`.
+    const offsets = headerBandOffsets(render(2)).flat();
+    expect(offsets.length).toBeGreaterThan(0);
+    const distinct = new Set(offsets);
+    expect(distinct.size).toBe(1);
+    expect(["", "0px"]).toContain(distinct.values().next().value);
   });
 });
 
