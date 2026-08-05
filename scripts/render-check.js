@@ -183,7 +183,9 @@ function measureExpression(scrollTop, scrollLeft) {
 
     var bands = Array.prototype.map.call(table.querySelectorAll("thead tr"), function (row) {
       var cell = row.querySelector("th[role='columnheader']");
-      return cell ? top(cell) : null;
+      if (!cell) return null;
+      var box = cell.getBoundingClientRect();
+      return { top: box.top, height: box.height };
     }).filter(function (value) { return value !== null; });
 
     var columnHeader = table.querySelector("thead th[role='columnheader']");
@@ -430,23 +432,65 @@ function checkCaption(fixtureId, measurement, report) {
 }
 
 function checkHeaderBands(fixtureId, measurement, report) {
-  const bands = round(measurement.bands);
-  console.log(`  column header band tops: [${bands.join(", ")}]`);
+  const bands = measurement.bands;
+  const tops = round(bands.map((band) => band.top));
+  const scrollportTop = measurement.viewportTop;
+  console.log(
+    `  column header band tops: [${tops.join(", ")}] ` +
+      `(heights [${round(bands.map((band) => band.height)).join(", ")}], ` +
+      `scrollport top ${Math.round(scrollportTop)})`
+  );
   report.check(
     bands.length > 1,
     `${fixtureId}: renders more than one column-header band (${bands.length})`
   );
+  if (bands.length === 0) return;
+
+  const TOLERANCE = 1.5;
+
+  /**
+   * PRECONDITION, and the whole reason the assertions below mean anything.
+   *
+   * "Distinct and strictly increasing" is trivially true of two header rows sitting in
+   * normal flow one above the other — it is satisfied by the un-stuck state, which is
+   * exactly the state the bug produces once scrolled. This is the same trap as the
+   * `scrollHeight === clientHeight` one at the top of this file, one level in: measure
+   * something that has not engaged yet and call it a pass.
+   *
+   * The first band resting exactly on the scrollport top *after the viewport has been
+   * scrolled by a non-zero amount* is only possible once sticky has taken over; unstuck,
+   * it would have travelled up with the content by `applied.top` pixels.
+   */
   report.check(
-    new Set(bands).size === bands.length,
+    Math.abs(bands[0].top - scrollportTop) <= TOLERANCE,
+    `${fixtureId}: the first column-header band is pinned to the scrollport top after ` +
+      `scrolling ${measurement.applied.top}px — sticky engaged ` +
+      `(band ${Math.round(bands[0].top)}, scrollport ${Math.round(scrollportTop)})`
+  );
+
+  // Each following band stacks directly beneath the one above it. This is what the
+  // per-band sticky offsets in src/visual.ts exist to produce: collapse them all onto
+  // `top: 0` and every band lands on the scrollport top instead.
+  for (let index = 1; index < bands.length; index += 1) {
+    const expected = bands[index - 1].top + bands[index - 1].height;
+    report.check(
+      Math.abs(bands[index].top - expected) <= TOLERANCE,
+      `${fixtureId}: header band ${index + 1} stacks directly beneath band ${index} ` +
+        `(expected ${Math.round(expected)}, measured ${Math.round(bands[index].top)})`
+    );
+  }
+
+  report.check(
+    new Set(tops).size === tops.length,
     `${fixtureId}: nested header bands stack instead of collapsing onto one another ` +
-      `(tops [${bands.join(", ")}])`
+      `(tops [${tops.join(", ")}])`
   );
   // Distinctness alone would accept bands stacked in the wrong order. Under scroll each
   // band has to sit strictly below the one above it, in document order.
   report.check(
-    measurement.bands.every((value, index) => index === 0 || value > measurement.bands[index - 1]),
+    bands.every((band, index) => index === 0 || band.top > bands[index - 1].top),
     `${fixtureId}: header band tops increase strictly in document order ` +
-      `(tops [${bands.join(", ")}])`
+      `(tops [${tops.join(", ")}])`
   );
 }
 
