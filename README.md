@@ -94,13 +94,28 @@ whether the rules are **correct**. Three sticky-header defects and a caption-con
 defect lived in rules that shipped perfectly and were simply wrong, and were only
 visible as geometry in a real engine.
 
-So this drives the real bundle and the real stylesheet in headless Chromium and fails if
-anything paints outside the visual's clipped bounds, if the screen-reader-only caption
-becomes visible or its containing block escapes the visual, if a diagnostics strip
-slices its own text, if the sticky header bands pile up or collapse under two-axis
-scroll, or if keyboard focus or selection break. It needs a local browser, so it is a
-local gate rather than a CI step; the rules it depends on are pinned in
-`tests/styles.test.ts`, which does run in CI.
+**Screenshot coverage does not imply scroll coverage.** The harness renders at
+1366x768 with fixtures that fit it, so the matrix does not overflow, nothing scrolls,
+and `position: sticky` never engages. Every sticky defect is therefore structurally
+invisible to `npm run screenshots` and to the three committed submission screenshots —
+they will look correct with the bugs fully present, because they are captured at rest.
+The same is true of any assertion made on a resting render: "stylesheet parsed,
+`display: flex`, caption is 1x1, nothing painted out of bounds" all pass with row
+headers that pile up the moment a user scrolls.
+
+So `render:check` deliberately shrinks the stage until the matrix genuinely overflows,
+scrolls it on both axes, and **fails rather than skips** if a fixture did not overflow —
+a check that quietly did not run is the failure mode being guarded against. It then
+fails if anything paints outside the visual's clipped bounds, if the screen-reader-only
+caption becomes visible or its containing block escapes the visual, if a diagnostics
+strip slices its own text, if the sticky header bands pile up or collapse, or if
+keyboard focus or selection break. It needs a local browser, so it is a local gate; the
+rules it depends on are pinned in `tests/styles.test.ts`, which does run in CI.
+
+The sharpest invariant it applies: once scrolled, the bounding-rect `top` of every
+`tbody th` must be **strictly increasing and all distinct**, because row headers scroll
+with their rows. A repeat means a row header has detached from its row and pinned itself
+to the scrollport.
 
 `scripts/generate-brand-assets.js` encodes both PNGs with nothing but Node's
 built-in `zlib`, so re-running it reproduces the same bytes.

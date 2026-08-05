@@ -7,6 +7,14 @@
  * `npm run render:check`. It refuses to proceed unless the stylesheet actually parsed,
  * so a capture can never be taken from an unstyled render.
  *
+ * SCOPE LIMIT, on purpose: these captures are taken at REST. The fixtures fit 1366x768,
+ * so the matrix never overflows, nothing scrolls, and `position: sticky` never engages.
+ * A sticky defect — row headers pinning to the top of the scrollport, header bands
+ * collapsing onto one another, a row header painting over the header band — is
+ * structurally invisible here and will produce a screenshot that looks perfectly
+ * correct. `npm run render:check` is what exercises that; do not read a clean capture as
+ * evidence of scrolled behaviour.
+ *
  * No npm dependency is added: the repo is served over loopback with `node:http` and
  * the browser is driven with Node's built-in `WebSocket`. Screenshots are committed
  * artifacts, so CI only validates them and never needs a browser.

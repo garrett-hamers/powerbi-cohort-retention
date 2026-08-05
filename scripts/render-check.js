@@ -123,8 +123,14 @@ const FOCUS_STATE = `(function () {
 })()`;
 
 /**
- * Sticky behaviour is only observable once the matrix overflows AND is scrolled. Three
- * regressions live here, all of which were invisible while the visual shipped unstyled:
+ * Sticky behaviour is only observable once the matrix overflows AND is scrolled. This is
+ * the whole reason a rest-state check cannot see these defects: with a fixture that fits
+ * its viewport nothing scrolls, sticky never engages, and "stylesheet parsed, display is
+ * flex, caption is 1x1, nothing out of bounds" all pass with the bugs fully present. The
+ * caller shrinks the stage first, and a matrix that fails to overflow is reported as a
+ * failure rather than skipped, so this can never pass vacuously.
+ *
+ * Three regressions live here:
  *   - row headers sticking vertically and piling up at the top of the scrollport,
  *   - nested column-header bands collapsing onto one another,
  *   - row headers painting over the column-header band they scroll under.
@@ -135,24 +141,42 @@ const STICKY = `(function () {
   var viewport = host.querySelector(".atlyn-matrix-viewport");
   var findings = [];
 
-  if (viewport.scrollHeight <= viewport.clientHeight || viewport.scrollWidth <= viewport.clientWidth) {
-    return { skipped: true, reason: "matrix does not overflow its scrollport" };
+  var overflow = {
+    vertical: viewport.scrollHeight > viewport.clientHeight,
+    horizontal: viewport.scrollWidth > viewport.clientWidth,
+    scrollHeight: viewport.scrollHeight,
+    clientHeight: viewport.clientHeight,
+    scrollWidth: viewport.scrollWidth,
+    clientWidth: viewport.clientWidth
+  };
+  if (!overflow.vertical || !overflow.horizontal) {
+    return { overflowed: false, overflow: overflow };
   }
 
   viewport.scrollTop = Math.min(200, viewport.scrollHeight - viewport.clientHeight);
   viewport.scrollLeft = Math.min(260, viewport.scrollWidth - viewport.clientWidth);
+  var scrolledTo = { top: viewport.scrollTop, left: viewport.scrollLeft };
 
-  var vpTop = Math.round(viewport.getBoundingClientRect().top);
   function top(el) { return Math.round(el.getBoundingClientRect().top); }
 
-  var rowHeaders = Array.prototype.slice.call(table.querySelectorAll("tbody th"), 0, 6);
-  var piled = rowHeaders.filter(function (th) { return Math.abs(top(th) - vpTop) <= 2; });
-  if (piled.length > 1) {
+  // The invariant: row headers scroll with their rows, so once the matrix is scrolled
+  // their tops must still be strictly increasing and all distinct. Any repeat means a
+  // row header has detached from its row and pinned to the scrollport, which is what
+  // \`.atlyn-matrix tbody th\` inheriting \`top: 0\` from the broader \`.atlyn-matrix th\`
+  // rule does. This is stricter than counting how many sit at the very top: it also
+  // catches a partial collapse or an inverted pair.
+  var rowHeaders = Array.prototype.slice.call(table.querySelectorAll("tbody th"), 0, 8);
+  var rowHeaderTops = rowHeaders.map(top);
+  var strictlyIncreasing = rowHeaderTops.every(function (value, index) {
+    return index === 0 || value > rowHeaderTops[index - 1];
+  });
+  if (!strictlyIncreasing) {
     findings.push({
       kind: "row-headers-pile-at-scrollport-top",
-      count: piled.length,
-      tops: rowHeaders.map(top),
-      detail: "row headers are sticky vertically; they should stick to the inline start only"
+      tops: rowHeaderTops,
+      distinct: new Set(rowHeaderTops).size,
+      of: rowHeaderTops.length,
+      detail: "row header tops must be strictly increasing after scrolling; they are sticky vertically"
     });
   }
 
@@ -181,14 +205,37 @@ const STICKY = `(function () {
       findings.push({
         kind: "row-header-covers-column-header",
         hit: hit ? hit.tagName + " '" + (hit.textContent || "").slice(0, 20) + "'" : null,
-        owner: owner ? owner.tagName : null
+        owner: owner ? owner.tagName : null,
+        detail: "row headers must paint below the column header band they scroll under"
+      });
+    }
+  }
+
+  // Containment has to hold while scrolled too: an absolutely positioned caption whose
+  // containing block is the page does not move with the matrix, so it drifts relative to
+  // the content it labels and is not clipped by the visual.
+  var caption = table.querySelector("caption");
+  var visualRoot = host.querySelector(".atlyn-cohort-visual");
+  if (caption && getComputedStyle(caption).position === "absolute") {
+    if (!(caption.offsetParent && visualRoot.contains(caption.offsetParent))) {
+      findings.push({
+        kind: "caption-escapes-clip-when-scrolled",
+        offsetParent: caption.offsetParent ? caption.offsetParent.tagName : "(null)",
+        detail: "caption's containing block is outside the visual"
       });
     }
   }
 
   viewport.scrollTop = 0;
   viewport.scrollLeft = 0;
-  return { skipped: false, findings: findings, bandTops: bandTops, rowHeaderTops: rowHeaders.map(top) };
+  return {
+    overflowed: true,
+    overflow: overflow,
+    scrolledTo: scrolledTo,
+    findings: findings,
+    bandTops: bandTops,
+    rowHeaderTops: rowHeaderTops
+  };
 })()`;
 
 /** Two column levels, so the Period hierarchy renders more than one header band. */
@@ -334,13 +381,20 @@ async function main() {
       await client.evaluate(`window.renderScenario(${JSON.stringify(fixture)})`);
       await delay(180);
       const sticky = await client.evaluate(STICKY);
-      if (sticky.skipped) {
-        problems.push(`${fixture.id}: sticky header check could not run (${sticky.reason})`);
-        console.log(`\n${fixture.id}: skipped (${sticky.reason})`);
+      if (!sticky.overflowed) {
+        // Not "skipped". A rest-state render is exactly how this class of defect stays
+        // invisible, so a fixture that fails to overflow means the check did not run.
+        problems.push(`${fixture.id}: matrix did not overflow, so sticky behaviour was never exercised`);
+        console.log(
+          `\n${fixture.id}: FINDING sticky check never engaged - ` +
+            `scrollHeight ${sticky.overflow.scrollHeight} vs clientHeight ${sticky.overflow.clientHeight}, ` +
+            `scrollWidth ${sticky.overflow.scrollWidth} vs clientWidth ${sticky.overflow.clientWidth}`
+        );
         continue;
       }
       console.log(
-        `\n${fixture.id}: header bands at ${JSON.stringify(sticky.bandTops)}, ` +
+        `\n${fixture.id}: scrolled to ${JSON.stringify(sticky.scrolledTo)}; ` +
+          `header bands at ${JSON.stringify(sticky.bandTops)}, ` +
           `row headers at ${JSON.stringify(sticky.rowHeaderTops)}`
       );
       for (const finding of sticky.findings) {

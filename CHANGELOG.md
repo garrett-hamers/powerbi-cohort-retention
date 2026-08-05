@@ -34,6 +34,17 @@
   its own text, if the sticky bands misbehave under two-axis scroll, or if keyboard focus
   or selection break. The certification audit proves the stylesheet *ships*; this proves
   it is *correct*. It needs a local browser, so it is a local gate rather than a CI step.
+  It shrinks the stage until the matrix genuinely overflows and **fails rather than
+  skips** if a fixture did not, because a check that quietly did not run is the failure
+  mode being guarded against. Its sharpest invariant: once scrolled, the bounding-rect
+  `top` of every `tbody th` must be strictly increasing and all distinct.
+- **Documented that screenshot coverage does not imply scroll coverage.** The screenshot
+  harness renders at 1366x768 with fixtures that fit it, so the matrix never overflows,
+  nothing scrolls, and `position: sticky` never engages. Every sticky defect is
+  structurally invisible to `npm run screenshots` and to the committed submission
+  screenshots — they look correct with the bugs fully present. The same is true of any
+  assertion made on a resting render. Noted in `README.md` and in the screenshot script's
+  own header so this is not rediscovered.
 - Extracted the headless-browser plumbing shared by `npm run screenshots` and
   `npm run render:check` into `scripts/headless-browser.js`. It refuses to proceed unless
   the stylesheet actually parsed, so neither tool can measure or capture an unstyled

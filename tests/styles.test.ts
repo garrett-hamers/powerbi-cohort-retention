@@ -99,10 +99,15 @@ describe("stylesheet rules the host actually receives", () => {
 
   describe("sticky header bands", () => {
     test("row headers are not sticky vertically", () => {
-      // The bug: a shared `.atlyn-matrix th { position: sticky; top: 0 }` also matched
-      // every tbody row header, so scrolling down pinned all the cohort labels to the
-      // top of the scrollport and piled them on top of one another. `top` resolving to
-      // anything here means that rule has come back.
+      // THE root cause, on one line: `.atlyn-matrix tbody th` sets `left: 0` but never
+      // resets `top`, so it inherits `top: 0` from the broader `.atlyn-matrix th` rule
+      // and pins vertically as well as horizontally. Scrolling down then detaches every
+      // cohort label from its row and stacks them at the top of the scrollport.
+      //
+      // `top` resolving to anything here means that inheritance is back. This is the
+      // CI-runnable half of the invariant; `npm run render:check` asserts the geometric
+      // half — that scrolled row-header tops stay strictly increasing and all distinct —
+      // which needs real layout and so cannot run in jsdom.
       const rowHeader = computed(".atlyn-matrix tbody th");
       expect(rowHeader.position).toBe("sticky");
       expect(rowHeader.left).toBe("0px");
