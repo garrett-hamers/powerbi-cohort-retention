@@ -24,7 +24,7 @@ and
 | Display name | `visual.displayName` | `Atlyn Cohort Retention` |
 | Visual GUID | `visual.guid` | `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11` |
 | Version (four parts) | `visual.version` | `1.0.1.0` |
-| API version | `apiVersion` | `5.11.1` |
+| API version | `apiVersion` | `5.11.0` |
 | Description | `visual.description` | See [section 2](#2-listing-description). 641 characters. |
 | Support URL | `visual.supportUrl` | `https://atlyn.io/contact` |
 | Source URL | `visual.gitHubUrl` | `https://github.com/garrett-hamers/powerbi-cohort-retention` |
@@ -361,8 +361,8 @@ kind — it is a normal smoke test, not a format risk.
 | Visual version | `1.0.1.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` |
-| Size | 21,831 bytes |
+| SHA-256 | `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` |
+| Size | 21,827 bytes |
 | Packaged CSS | 5,167 bytes, inline as `content.css` |
 | Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
@@ -453,11 +453,11 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` | 21,831 bytes |
-| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` | 21,831 bytes |
+| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` | 21,827 bytes |
+| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` | 21,827 bytes |
 
-**Confirmed identical**, so `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b`
-at 21,831 bytes is the value to publish in the release manifest, under
+**Confirmed identical**, so `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5`
+at 21,827 bytes is the value to publish in the release manifest, under
 `cohort-retention/1.0.1.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from

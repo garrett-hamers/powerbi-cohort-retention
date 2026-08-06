@@ -82,7 +82,7 @@
   depend on, so `npm test` still catches a regression on a machine with no browser.
 - **The packaged bytes changed**, because `style/visual.less` is a packaged input inlined as
   `content.css`. The artifact is now
-  `ed44485484b1b259517421e2b9363c8c245063b23e5b288ca19b7b241170408b` at 21,831 bytes, with
+  `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` at 21,827 bytes, with
   5,167 bytes of CSS inline (was 3,524). The GUID, the packaged filename, and the version
   `1.0.1.0` are all unchanged; nothing has been distributed at `1.0.1.0`, so this stays within
   the same version. The sample report was regenerated with `npm run sample:report` rather than
