@@ -122,7 +122,7 @@ async function assertPackagedVisual(archive) {
 
 assert(pbiviz.visual.guid === expectedGuid, "the visual GUID changed");
 assert(/^\d+\.\d+\.\d+\.\d+$/.test(pbiviz.visual.version), "visual version must have four numeric parts");
-assert(pbiviz.apiVersion === "5.11.1", "the API version changed unexpectedly");
+assert(pbiviz.apiVersion === "5.11.0", "the API version changed unexpectedly");
 assert(Array.isArray(pbiviz.externalJS) && pbiviz.externalJS.length === 0, "externalJS must remain empty");
 assert(Array.isArray(capabilities.privileges) && capabilities.privileges.length === 0, "privileges must remain empty");
 assert(fs.existsSync(packagePath) && fs.statSync(packagePath).size > 0, "the .pbiviz package is missing");
