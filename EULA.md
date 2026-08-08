@@ -56,7 +56,7 @@ the report author binds to it.
 - The Software does not collect, transmit, store, or sell your data, and Atlyn
   receives no telemetry from it.
 
-Atlyn's privacy policy is published at https://atlyn.io/legal/privacy and applies
+Atlyn's privacy policy is published at https://atlynco.com/legal/privacy and applies
 to the Atlyn website and to any support correspondence you send us. It does not
 change the fact that the Software itself transmits nothing.
 

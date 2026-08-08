@@ -6,6 +6,7 @@ const less = require("less");
 const { getSourceManifest } = require("./package-manifest");
 const { resourceEntryName } = require("./visual-package");
 const { findRecordedValueDrift, readSupersededHashes } = require("./doc-hash-gate");
+const { findDataRoleMappingProblems } = require("./data-role-mapping-audit");
 const { packagedCssMatchesSource } = require("./package-freshness");
 
 const root = path.resolve(__dirname, "..");
@@ -145,7 +146,7 @@ assert(
 
 const mapping = capabilities.dataViewMappings?.[0]?.matrix;
 assert(mapping?.rows?.dataReductionAlgorithm?.window?.count === 500, "row reduction must be 500");
-assert(mapping?.columns?.dataReductionAlgorithm?.window?.count === 500, "column reduction must be 500");
+assert(mapping?.columns?.dataReductionAlgorithm?.top?.count === 500, "column reduction must be 500");
 assert(capabilities.expandCollapse?.roles?.join(",") === "Cohort,Period", "expand/collapse roles changed");
 assert(capabilities.subtotals?.matrix?.rowSubtotals?.defaultValue === true, "row subtotals must be enabled");
 assert(capabilities.subtotals?.matrix?.columnSubtotals?.defaultValue === true, "column subtotals must be enabled");
@@ -155,6 +156,11 @@ assert(
   "Period sorting is not explicit"
 );
 assert(!("drill" in capabilities), "drill declarations must remain absent");
+const mappingProblems = findDataRoleMappingProblems(capabilities);
+assert(
+  mappingProblems.length === 0,
+  `the data role mappings block incremental field assignment:\n  - ${mappingProblems.join("\n  - ")}`
+);
 
 const sourceFiles = fs
   .readdirSync(path.join(root, "src"))
@@ -445,6 +451,15 @@ const sampleVisual = JSON.parse(
   fs.readFileSync(path.join(sampleVisuals, sampleVisualDirectories[0].name, "visual.json"), "utf8")
 );
 assert(sampleVisual.visual?.visualType === expectedGuid, "the sample visual does not bind this GUID");
+const sampleHint =
+  sampleVisual.visual?.visualContainerObjects?.subTitle?.[0]?.properties?.text?.expr?.Literal?.Value;
+assert(
+  typeof sampleHint === "string" &&
+    sampleHint.includes("Tip:") &&
+    sampleHint.includes("Cohort") &&
+    sampleHint.includes("Period"),
+  "the sample report must show an in-report usage tip that names the Cohort and Period roles"
+);
 
 const roleNames = new Set(capabilities.dataRoles.map((role) => role.name));
 const boundRoles = Object.keys(sampleVisual.visual.query?.queryState ?? {});

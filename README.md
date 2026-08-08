@@ -35,7 +35,7 @@ formatting pane:
 integer index; labels such as `Month 0` are presentation only. `Tooltip` fields
 are passed through to the host tooltip with their host format strings.
 
-The matrix uses a bounded 500-row and 500-column reduction window. When the host
+The matrix uses a 500-row reduction window and a bounded 500-column top reduction. When the host
 returns a segment, or the bounded model truncates a response, the visual exposes
 a **Load more data** action and calls `fetchMoreData`; it does not pretend that a
 truncated view is complete. Drill declarations are intentionally absent;
@@ -142,9 +142,10 @@ Its only table is a DAX calculated table built with `DATATABLE(...)`, so the mod
 has no data source at all and never prompts for credentials, and the built visual
 is embedded through `resourcePackages` + `Report/CustomVisuals/<GUID>/` rather than
 `publicCustomVisuals`. See [`samples/README.md`](samples/README.md), including the
-one-time Power BI Desktop "Save As .pbix" step. Both the screenshots and the sample
-report draw their numbers from `scripts/cohort-dataset.js`, so they tell the same
-story.
+Power BI Desktop refresh, "Save As .pbix", and reopen procedure used to create a
+submission binary. The 1.0.2.0 repair handoff includes that refreshed PBIX. Both
+the screenshots and the sample report draw their numbers from
+`scripts/cohort-dataset.js`, so they tell the same story.
 
 `npm run publication:assets:enforce` is the enforced gate. It runs inside
 `npm run package` and as its own CI step, and fails the build on a missing or

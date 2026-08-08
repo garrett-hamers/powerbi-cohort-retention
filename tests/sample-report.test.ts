@@ -214,6 +214,14 @@ describe("offline PBIP sample report", () => {
     });
   });
 
+  test("shows a visible usage tip in the report", () => {
+    const container = visualJson();
+    const subtitle = container.visual.visualContainerObjects.subTitle[0].properties;
+    expect(subtitle.show.expr.Literal.Value).toBe("true");
+    expect(subtitle.titleWrap.expr.Literal.Value).toBe("true");
+    expect(subtitle.text.expr.Literal.Value).toMatch(/Tip:.*Cohort.*Period/);
+  });
+
   test("persists only formatting properties the visual actually declares", () => {
     const container = visualJson();
     const declared = Object.keys(capabilities.objects.matrix.properties);

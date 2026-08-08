@@ -44,6 +44,8 @@ const modelFolder = `${projectName}.SemanticModel`;
 const tableName = "CohortRetention";
 const COHORT_COUNT = 16;
 const PERIOD_COUNT = 12;
+const SAMPLE_USAGE_HINT =
+  "Tip: Bind Cohort to rows and Period to relative integer columns. Hover a cell for denominator and observation details.";
 
 /**
  * `definition.pbir` and `definition.pbism` MUST be "4.0" or higher for the exploded
@@ -228,6 +230,17 @@ function buildVisual(guid) {
               text: {
                 expr: { Literal: { Value: "'Customer retention by monthly cohort'" } }
               }
+            }
+          }
+        ],
+        subTitle: [
+          {
+            properties: {
+              show: { expr: { Literal: { Value: "true" } } },
+              text: {
+                expr: { Literal: { Value: `'${SAMPLE_USAGE_HINT}'` } }
+              },
+              titleWrap: { expr: { Literal: { Value: "true" } } }
             }
           }
         ]

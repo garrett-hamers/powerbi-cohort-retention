@@ -124,11 +124,9 @@
       "conditions": [
         {
           "Cohort": {
-            "min": 1,
             "max": 1
           },
           "Period": {
-            "min": 1,
             "max": 1
           },
           "Retained": {
@@ -191,7 +189,7 @@
             "in": "Period"
           },
           "dataReductionAlgorithm": {
-            "window": {
+            "top": {
               "count": 500
             }
           }

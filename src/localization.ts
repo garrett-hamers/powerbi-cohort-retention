@@ -60,7 +60,7 @@ const ENGLISH: Labels = {
   moreData: "More data is available.",
   loadMore: "Load more data",
   fetchRejected: "The host did not accept more data.",
-  noData: "No cohort data is available.",
+  noData: "Add Cohort and Period, then add the measure fields required by the selected metric mode.",
   invalid: "The visual cannot render this data",
   notAvailable: "N/A",
   selectRow: "Select cohort row",
@@ -107,7 +107,8 @@ const SPANISH: Labels = {
   latest: "Último período observado",
   moreData: "Hay más datos disponibles.",
   loadMore: "Cargar más datos",
-  noData: "No hay datos de cohortes disponibles.",
+  noData:
+    "Agregue Cohorte y Periodo y, despues, los campos de medida requeridos por el modo de metrica seleccionado.",
   invalid: "La visual no puede representar estos datos",
   notAvailable: "N/D",
   selectRow: "Seleccionar fila de cohorte",

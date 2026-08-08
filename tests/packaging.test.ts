@@ -190,7 +190,7 @@ describe("clean visual package metadata", () => {
       expect.arrayContaining([expect.objectContaining({ value: "entity-retention" })])
     );
     expect(capabilities.dataViewMappings[0].matrix.rows.dataReductionAlgorithm.window.count).toBe(500);
-    expect(capabilities.dataViewMappings[0].matrix.columns.dataReductionAlgorithm.window.count).toBe(500);
+    expect(capabilities.dataViewMappings[0].matrix.columns.dataReductionAlgorithm.top.count).toBe(500);
     expect(capabilities.tooltips.roles).toEqual(["Tooltip"]);
     expect(capabilities.tooltips.supportEnhancedTooltips).toBe(true);
   });
@@ -340,7 +340,7 @@ describe("AppSource submission assets", () => {
     [
       "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11",
       "https://atlyn.io/contact",
-      "https://atlyn.io/legal/privacy",
+      "https://atlynco.com/legal/privacy",
       "atlyn.help@gmail.com",
       "assets/partner-center-logo-300.png",
       "assets/icon.png",
