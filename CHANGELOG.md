@@ -2,13 +2,12 @@
 
 ## Unreleased
 
-- **Fixed native PBIP private-visual registration.** The sample generator now embeds the exact
-  deterministic `.pbiviz` archive under
-  `AtlynSample.Report/StaticResources/RegisteredResources/`, registers the native resource
-  package/type-5 entry plus matching `customVisuals` GUID/version, and removes the unpacked
-  `CustomVisuals/<GUID>` approximation that Desktop did not load. The product PBIVIZ bytes remain
-  unchanged; the certification audit and sample tests require the embedded archive to match them
-  byte-for-byte.
+- **Fixed native PBIP private-visual registration.** Desktop validation showed that this release
+  loads the proven unpacked `CustomVisuals/<GUID>/` resource package, not the
+  `RegisteredResources` archive layout. The sample generator now extracts the exact
+  `package.json` and `resources/<GUID>.pbiviz.json` entries from the built PBIVIZ archive, and
+  the certification audit/tests require both files to remain byte-identical to those entries.
+  The product PBIVIZ bytes remain unchanged.
 - **Advanced the corrected release to `1.0.3.0` (`package.json` `1.0.3`).** Partner Center
   already has `1.0.2.0` submitted and in progress, so this release uses a higher version and
   must not reuse that package or its sample PBIX.

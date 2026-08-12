@@ -4,7 +4,7 @@ const path = require("node:path");
 const JSZip = require("jszip");
 const less = require("less");
 const { getSourceManifest } = require("./package-manifest");
-const { registeredResourceFilename, resourceEntryName } = require("./visual-package");
+const { resourceEntryName } = require("./visual-package");
 const { findRecordedValueDrift, readSupersededHashes } = require("./doc-hash-gate");
 const { findDataRoleMappingProblems } = require("./data-role-mapping-audit");
 const { packagedCssMatchesSource } = require("./package-freshness");
@@ -355,11 +355,13 @@ for (const relativePath of [
   path.join(`${sampleProject}.Report`, "definition", "version.json"),
   path.join(`${sampleProject}.Report`, "definition", "report.json"),
   path.join(`${sampleProject}.Report`, "definition", "pages", "pages.json"),
+  path.join(`${sampleProject}.Report`, "CustomVisuals", expectedGuid, "package.json"),
   path.join(
     `${sampleProject}.Report`,
-    "StaticResources",
-    "RegisteredResources",
-    registeredResourceFilename(pbiviz)
+    "CustomVisuals",
+    expectedGuid,
+    "resources",
+    `${expectedGuid}.pbiviz.json`
   )
 ]) {
   assert(fs.existsSync(path.join(sampleRoot, relativePath)), `the sample report is missing ${relativePath}`);
@@ -434,36 +436,42 @@ assert(
   sampleReportJson.publicCustomVisuals === undefined,
   "the sample report must embed the visual, not resolve it from the AppSource store"
 );
-const sampleResourceFilename = registeredResourceFilename(pbiviz);
+assert(sampleReportJson.customVisuals === undefined, "the sample report must use the proven PBIP resource shape");
 const samplePackage = sampleReportJson.resourcePackages?.find(
-  (entry) => entry.name === "RegisteredResources" && entry.type === "RegisteredResources"
+  (entry) => entry.name === expectedGuid && entry.type === "CustomVisual"
 );
-assert(samplePackage, "the sample report does not register its visual in RegisteredResources");
+assert(samplePackage, "the sample report does not register its visual as a CustomVisual resource");
 assert(
   JSON.stringify(samplePackage.items) ===
     JSON.stringify([
       {
-        name: sampleResourceFilename,
-        path: `CustomVisuals/${sampleResourceFilename}`,
-        type: 5
+        name: `${expectedGuid}.pbiviz.json`,
+        path: `${expectedGuid}.pbiviz.json`,
+        type: "CustomVisualMetadata"
       }
     ]),
-  "the sample report's RegisteredResources entry is not the native private-visual shape"
+  "the sample report's CustomVisual resource entry is not the proven PBIP shape"
 );
-assert(
-  JSON.stringify(sampleReportJson.customVisuals) ===
-    JSON.stringify([{ name: expectedGuid, version: pbiviz.visual.version }]),
-  "the sample report customVisuals registration is missing or stale"
-);
-const sampleResourcePath = path.join(
+const sampleDescriptorPath = path.join(
   sampleReport,
-  "StaticResources",
-  "RegisteredResources",
-  sampleResourceFilename
+  "CustomVisuals",
+  expectedGuid,
+  "package.json"
+);
+const sampleDefinitionPath = path.join(
+  sampleReport,
+  "CustomVisuals",
+  expectedGuid,
+  "resources",
+  `${expectedGuid}.pbiviz.json`
 );
 assert(
-  fs.readFileSync(sampleResourcePath).equals(fs.readFileSync(packagePath)),
-  "the sample's embedded PBIVIZ bytes do not match the packaged release"
+  fs.existsSync(sampleDescriptorPath) && fs.existsSync(sampleDefinitionPath),
+  "the sample report is missing the unpacked CustomVisual package entries"
+);
+assert(
+  !fs.existsSync(path.join(sampleReport, "StaticResources")),
+  "the sample report must not carry the unsupported RegisteredResources archive layout"
 );
 
 const samplePages = path.join(sampleReport, "definition", "pages");
@@ -570,8 +578,8 @@ assert(
 
 /**
  * The GUID cascades through pbiviz.json, the packaged manifest and resource entry name, the
- * plugin registration, the sample report's RegisteredResources archive, `resourcePackages`,
- * `customVisuals`, and `visualType`. A single missed occurrence would leave the sample report
+ * plugin registration, the sample report's CustomVisuals resource, `resourcePackages`, and
+ * `visualType`. A single missed occurrence would leave the sample report
  * binding a visual the package no longer registers, which nothing else here would catch. The previous GUID was the
  * hyphenated UUID this one preserves, so it must not appear anywhere except the two documents
  * that record the change deliberately.
@@ -637,6 +645,23 @@ JSZip.loadAsync(fs.readFileSync(packagePath))
    assert(
      JSON.stringify(fileEntries) === JSON.stringify(metadata.packageFiles.slice().sort()),
      "package file entries do not match package metadata"
+   );
+
+   const archiveDescriptorEntry = archive.file("package.json");
+   const archiveDefinitionEntry = archive.file(resourceEntryName(expectedGuid));
+   assert(
+     archiveDescriptorEntry && archiveDefinitionEntry,
+     "the PBIVIZ archive is missing an entry required by the sample"
+   );
+   const archiveDescriptor = await archiveDescriptorEntry.async("nodebuffer");
+   const archiveDefinition = await archiveDefinitionEntry.async("nodebuffer");
+   assert(
+     fs.readFileSync(sampleDescriptorPath).equals(archiveDescriptor),
+     "the sample package.json is not byte-identical to the packaged PBIVIZ archive entry"
+   );
+   assert(
+     fs.readFileSync(sampleDefinitionPath).equals(archiveDefinition),
+     "the sample visual resource is not byte-identical to the packaged PBIVIZ archive entry"
    );
 
    const cssBytes = await assertPackagedVisual(archive);

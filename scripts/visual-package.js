@@ -15,7 +15,7 @@
  *
  * This module is the single source of truth for that shape, shared by `scripts/package.js`
  * (which zips the two files into the `.pbiviz`) and `scripts/generate-sample-report.js`
- * (which embeds that same archive in the report's RegisteredResources).
+ * (which extracts those same archive entries into the report's CustomVisuals folder).
  */
 
 const fs = require("node:fs");
@@ -148,19 +148,12 @@ function resourceEntryName(guid) {
   return `resources/${guid}.pbiviz.json`;
 }
 
-/** The deterministic filename used when a PBIVIZ is registered in a PBIP report. */
-function registeredResourceFilename(pbiviz) {
-  const safeName =
-    pbiviz.visual.name.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "visual";
-  return `${safeName}.${pbiviz.visual.guid}.pbiviz`;
-}
-
 /**
- * Builds the exact deterministic archive used by the product package and the PBIP sample.
+ * Builds the exact deterministic archive used by the product package.
  *
- * Power BI Desktop resolves a private visual from the PBIVIZ archive registered in
- * StaticResources/RegisteredResources, so the sample must carry these exact bytes rather than
- * an unpacked approximation of the package.
+ * Power BI Desktop's PBIP CustomVisual resource format uses the same two files as the product
+ * archive, so the sample generator extracts these archive entries instead of reserializing an
+ * approximation of the package.
  */
 async function buildVisualArchive(descriptor, definition) {
   const resourcePath = resourceEntryName(descriptor.visual.guid);
@@ -190,7 +183,6 @@ module.exports = {
   buildVisualArchive,
   buildVisualPackage,
   pluginRegistration,
-  registeredResourceFilename,
   readStringResources,
   readText,
   resourceEntryName

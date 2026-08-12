@@ -12,13 +12,34 @@ const modelDefinition = path.join(modelFolder, "definition");
 const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
 const capabilities = JSON.parse(fs.readFileSync(path.join(root, "capabilities.json"), "utf8"));
 const guid: string = pbiviz.visual.guid;
-const registeredResourceFilename = `${pbiviz.visual.name}.${guid}.pbiviz`;
-const registeredResourcePath = path.join(
-  reportFolder,
-  "StaticResources",
-  "RegisteredResources",
-  registeredResourceFilename
-);
+const customVisualFolder = path.join(reportFolder, "CustomVisuals", guid);
+const descriptorPath = path.join(customVisualFolder, "package.json");
+const definitionPath = path.join(customVisualFolder, "resources", `${guid}.pbiviz.json`);
+
+function readJson(relativePath: string): any {
+  return JSON.parse(fs.readFileSync(relativePath, "utf8"));
+}
+
+async function canonicalArchiveEntries(): Promise<{ descriptor: Buffer; definition: Buffer }> {
+  const { buildVisualArchive } = require("../scripts/visual-package");
+  const archiveBytes = await buildVisualArchive(readJson(descriptorPath), readJson(definitionPath));
+  const archive = await JSZip.loadAsync(archiveBytes);
+  return {
+    descriptor: await archive.file("package.json")!.async("nodebuffer"),
+    definition: await archive.file(`resources/${guid}.pbiviz.json`)!.async("nodebuffer")
+  };
+}
+
+/**
+ * The sample uses the same two unpacked files as the proven PBIP CustomVisual format.
+ * Their bytes must remain the exact entries produced by the canonical PBIVIZ archive builder.
+ */
+function unpackedVisualBytes(): { descriptor: Buffer; definition: Buffer } {
+  return {
+    descriptor: fs.readFileSync(descriptorPath),
+    definition: fs.readFileSync(definitionPath)
+  };
+}
 
 /**
  * Power Query / M data-source functions and remote URLs. None may appear in the
@@ -46,10 +67,6 @@ const EXTERNAL_SOURCE_TOKENS = [
   "https://"
 ];
 
-function readJson(absolutePath: string): any {
-  return JSON.parse(fs.readFileSync(absolutePath, "utf8"));
-}
-
 function pageDirectory(): string {
   const pages = path.join(reportFolder, "definition", "pages");
   const entries = fs.readdirSync(pages, { withFileTypes: true }).filter((entry) => entry.isDirectory());
@@ -65,13 +82,7 @@ function visualJson(): any {
 }
 
 async function embeddedDefinition(): Promise<any> {
-  const archive = await JSZip.loadAsync(fs.readFileSync(registeredResourcePath));
-  const manifest = JSON.parse(await archive.file("package.json")!.async("string"));
-  const resource = manifest.resources.find(
-    (entry: { resourceId: string }) => entry.resourceId === manifest.metadata.pbivizjson.resourceId
-  );
-  expect(resource).toBeDefined();
-  return JSON.parse(await archive.file(resource.file)!.async("string"));
+  return readJson(definitionPath);
 }
 
 function tmdlFiles(): string[] {
@@ -248,36 +259,48 @@ describe("offline PBIP sample report", () => {
     });
   });
 
-  test("embeds the visual for offline use instead of resolving it from the store", () => {
+  test("embeds the visual in the proven PBIP CustomVisual shape", async () => {
     const report = readJson(path.join(reportFolder, "definition", "report.json"));
     expect(report.publicCustomVisuals).toBeUndefined();
-    expect(report.customVisuals).toEqual([{ name: guid, version: pbiviz.visual.version }]);
+    expect(report.customVisuals).toBeUndefined();
 
     const custom = report.resourcePackages.find(
-      (entry: { name: string; type: string }) =>
-        entry.name === "RegisteredResources" && entry.type === "RegisteredResources"
+      (entry: { name: string; type: string }) => entry.name === guid && entry.type === "CustomVisual"
     );
     expect(custom).toBeDefined();
     expect(custom.items).toEqual([
-      { name: registeredResourceFilename, path: `CustomVisuals/${registeredResourceFilename}`, type: 5 }
+      { name: `${guid}.pbiviz.json`, path: `${guid}.pbiviz.json`, type: "CustomVisualMetadata" }
     ]);
 
-    expect(fs.existsSync(registeredResourcePath)).toBe(true);
-    expect(fs.existsSync(path.join(reportFolder, "CustomVisuals"))).toBe(false);
+    expect(fs.existsSync(descriptorPath)).toBe(true);
+    expect(fs.existsSync(definitionPath)).toBe(true);
+    expect(fs.existsSync(path.join(reportFolder, "StaticResources"))).toBe(false);
 
-    return embeddedDefinition().then((definition) => {
-      expect(definition.visual.guid).toBe(guid);
-      expect(definition.visual.version).toBe(pbiviz.visual.version);
-      expect(definition.apiVersion).toBe(pbiviz.apiVersion);
-      expect(definition.externalJS).toEqual([]);
-      expect(definition.capabilities).toEqual(capabilities);
-      expect(definition.stringResources["en-US"]).toBeDefined();
-      expect(definition.content.iconBase64.startsWith("data:image/png;base64,")).toBe(true);
-      expect(definition.content.css).toBe(
-        fs.readFileSync(path.join(root, "style", "visual.less"), "utf8").replace(/\r\n/g, "\n")
-      );
-      expect(definition.content.js).toContain(`powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}]`);
-    });
+    const descriptor = readJson(descriptorPath);
+    expect(descriptor.visual.guid).toBe(guid);
+    expect(descriptor.version).toBe(pbiviz.visual.version);
+    expect(descriptor.resources).toEqual([
+      { resourceId: "rId0", sourceType: 5, file: `resources/${guid}.pbiviz.json` }
+    ]);
+    expect(descriptor.metadata).toEqual({ pbivizjson: { resourceId: "rId0" } });
+
+    const definition = readJson(definitionPath);
+    expect(definition.visual.guid).toBe(guid);
+    expect(definition.visual.version).toBe(pbiviz.visual.version);
+    expect(definition.apiVersion).toBe(pbiviz.apiVersion);
+    expect(definition.externalJS).toEqual([]);
+    expect(definition.capabilities).toEqual(capabilities);
+    expect(definition.stringResources["en-US"]).toBeDefined();
+    expect(definition.content.iconBase64.startsWith("data:image/png;base64,")).toBe(true);
+    expect(definition.content.css).toBe(
+      fs.readFileSync(path.join(root, "style", "visual.less"), "utf8").replace(/\r\n/g, "\n")
+    );
+    expect(definition.content.js).toContain(`powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}]`);
+
+    const archive = await canonicalArchiveEntries();
+    const unpacked = unpackedVisualBytes();
+    expect(unpacked.descriptor).toEqual(archive.descriptor);
+    expect(unpacked.definition).toEqual(archive.definition);
   });
 
   test("sources data from a DAX calculated table, not a query", () => {

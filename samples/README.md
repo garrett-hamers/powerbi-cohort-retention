@@ -26,8 +26,9 @@ samples/
 │   │   ├── pages/pages.json
 │   │   └── pages/<pageId>/page.json
 │   │       └── visuals/<visualId>/visual.json
-│   └── StaticResources/RegisteredResources/
-│       └── <visual-name>.<GUID>.pbiviz
+│   └── CustomVisuals/<GUID>/
+│       ├── package.json
+│       └── resources/<GUID>.pbiviz.json
 └── AtlynSample.SemanticModel/
     ├── definition.pbism
     └── definition/
@@ -68,13 +69,13 @@ all, so there is no data source to authenticate, no credential prompt, and no
 refresh dependency. There is deliberately no `dataSources.tmdl` and no
 `expressions.tmdl`.
 
-The visual is embedded as the exact product `.pbiviz` archive in
-`Report/StaticResources/RegisteredResources/`. `definition/report.json` registers
-that file in the `RegisteredResources` package with the native custom-visual
-resource type `5` and records the matching `customVisuals` GUID/version entry.
-This is the format Power BI Desktop loads for a private custom visual. A
-`publicCustomVisuals` entry would resolve from the AppSource store at open time
-and would **not** be offline, so a test asserts it stays absent.
+The visual is embedded as the exact two product `.pbiviz` archive entries under
+`Report/CustomVisuals/<GUID>/`. `definition/report.json` registers the visual with
+the proven `CustomVisual` resource package shape and `CustomVisualMetadata` item.
+The generator extracts `package.json` and `resources/<GUID>.pbiviz.json` directly
+from the built archive, so the sample cannot drift through a hand-written
+approximation. A `publicCustomVisuals` entry would resolve from the AppSource
+store at open time and would **not** be offline, so a test asserts it stays absent.
 
 ## Definition versions
 
@@ -205,8 +206,8 @@ the same story.
 
 ## Embedded visual format
 
-The file in `StaticResources/RegisteredResources/` is the exact deterministic
-`.pbiviz` archive produced for the product package. Its contents match the
+The files in `CustomVisuals/<GUID>/` are the exact deterministic entries from the
+`.pbiviz` archive produced for the product package. Their contents match the
 format produced by the official packager, read directly from the installed
 `node_modules/powerbi-visuals-webpack-plugin/src/index.js`:
 

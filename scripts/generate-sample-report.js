@@ -21,9 +21,9 @@
  *   and no refresh dependency. This is a stronger offline guarantee than an inline
  *   Power Query literal, which still counts as a query.
  *
- * - **Visual embedded as the exact PBIVIZ archive under
- *   `Report/StaticResources/RegisteredResources/`** and registered in `report.json`. This is
- *   the native private-visual resource shape Power BI Desktop loads from a PBIP report.
+ * - **Visual embedded as the exact PBIVIZ archive entries under
+ *   `Report/CustomVisuals/<GUID>/`** and registered in `report.json`. This is the private-visual
+ *   resource shape Power BI Desktop loads from a PBIP report.
  *   `publicCustomVisuals` would resolve from the AppSource store at open time and would not be
  *   offline.
  *
@@ -33,12 +33,9 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const JSZip = require("jszip");
 const { triangleRecords } = require("./cohort-dataset");
-const {
-  buildVisualArchive,
-  buildVisualPackage,
-  registeredResourceFilename
-} = require("./visual-package");
+const { buildVisualArchive, buildVisualPackage, resourceEntryName } = require("./visual-package");
 
 const root = path.resolve(__dirname, "..");
 const samples = path.join(root, "samples");
@@ -96,8 +93,38 @@ function write(relativePath, contents) {
   return relativePath;
 }
 
+function writeBuffer(relativePath, contents) {
+  const target = path.join(samples, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, contents);
+  return relativePath;
+}
+
 function writeJson(relativePath, value) {
   return write(relativePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function extractVisualArchive(archiveBytes, guid) {
+  const archive = await JSZip.loadAsync(archiveBytes);
+  const resourcePath = resourceEntryName(guid);
+  const packageEntry = archive.file("package.json");
+  const resourceEntry = archive.file(resourcePath);
+  if (!packageEntry || !resourceEntry) {
+    throw new Error(
+      `The built PBIVIZ must contain package.json and ${resourcePath} before generating the sample.`
+    );
+  }
+
+  return [
+    [
+      `${reportFolder}/CustomVisuals/${guid}/package.json`,
+      await packageEntry.async("nodebuffer")
+    ],
+    [
+      `${reportFolder}/CustomVisuals/${guid}/resources/${path.posix.basename(resourcePath)}`,
+      await resourceEntry.async("nodebuffer")
+    ]
+  ];
 }
 
 /** TMDL is indentation scoped and Power BI Desktop writes it tab-indented. */
@@ -326,18 +353,17 @@ async function main() {
       },
       resourcePackages: [
         {
-          name: "RegisteredResources",
-          type: "RegisteredResources",
+          name: guid,
+          type: "CustomVisual",
           items: [
             {
-              name: registeredResourceFilename(pbiviz),
-              path: `CustomVisuals/${registeredResourceFilename(pbiviz)}`,
-              type: 5
+              name: `${guid}.pbiviz.json`,
+              path: `${guid}.pbiviz.json`,
+              type: "CustomVisualMetadata"
             }
           ]
         }
       ],
-      customVisuals: [{ name: guid, version: pbiviz.visual.version }],
       settings: {
         useStylableVisualContainerHeader: true,
         defaultDrillFilterOtherVisuals: true
@@ -371,12 +397,9 @@ async function main() {
   );
 
   const archive = await buildVisualArchive(descriptor, definition);
-  written.push(
-    write(
-      `${reportFolder}/StaticResources/RegisteredResources/${registeredResourceFilename(pbiviz)}`,
-      archive
-    )
-  );
+  for (const [relativePath, contents] of await extractVisualArchive(archive, guid)) {
+    written.push(writeBuffer(relativePath, contents));
+  }
 
   for (const relativePath of written) {
     console.log(`Wrote samples/${relativePath}`);
