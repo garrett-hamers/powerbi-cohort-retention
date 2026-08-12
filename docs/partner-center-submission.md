@@ -23,7 +23,7 @@ and
 | Visual name | `visual.name` | `atlynCohortRetention` |
 | Display name | `visual.displayName` | `Atlyn Cohort Retention` |
 | Visual GUID | `visual.guid` | `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11` |
-| Version (four parts) | `visual.version` | `1.0.2.0` |
+| Version (four parts) | `visual.version` | `1.0.3.0` |
 | API version | `apiVersion` | `5.11.0` |
 | Description | `visual.description` | See [section 2](#2-listing-description). 641 characters. |
 | Support URL | `visual.supportUrl` | `https://atlyn.io/contact` |
@@ -291,12 +291,10 @@ Use this procedure whenever the PBIP source or embedded visual changes:
    an empty grid. This is the check that catches a missed step 2.
 6. Upload that `.pbix` to Partner Center as the sample report.
 
-> **The 1.0.2.0 certification repair completed this procedure in Power BI Desktop
-> 2.156.951.0.** The refreshed PBIX was reopened successfully, showed no visual
-> query error, retained the `Cohort`, `Period`, `Retained`, and `CohortSize`
-> bindings, and contained the visible usage subtitle. The PBIX remains outside
-> version control; its absolute path, SHA-256, and byte size are part of the
-> release handoff.
+> The earlier `1.0.2.0` repair completed this procedure in Power BI Desktop
+> 2.156.951.0, but Partner Center already has that version in progress. The
+> `1.0.3.0` PBIX must be regenerated from this source and its exact reopen
+> evidence recorded before handoff; do not reuse the earlier binary.
 
 ### Offline guarantee, enforced
 
@@ -410,11 +408,11 @@ state also gives actionable role-well guidance.
 
 | Field | Value |
 | --- | --- |
-| Visual version | `1.0.2.0` |
+| Visual version | `1.0.3.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
-| Storefront Blob path | `cohort-retention/1.0.2.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `daf4032d4c5abbd49b7a684239dcf4826e817fe874352448d9bec73566e1f0dc` |
-| Size | 21,908 bytes |
+| Storefront Blob path | `cohort-retention/1.0.3.0/atlyn-cohort-retention.pbiviz` |
+| SHA-256 | `d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133` |
+| Size | 21,909 bytes |
 | Packaged CSS | 5,167 bytes, inline as `content.css` |
 | Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
@@ -486,11 +484,9 @@ grid cells with the stylesheet applied (`display: flex`). Rebuilding the archive
 flat layout fails all three of those tests and the certification audit.
 
 This automated check proves the artifact loads and renders **from its own bytes**, through the
-same manifest indirection the host uses. The 1.0.2.0 repair was also validated in Power BI
-Desktop: the corrected PBIP loaded without the mapping or secondary-reduction query errors, and
-the refreshed PBIX was saved, reopened, and inspected. Its embedded visual reports version
-`1.0.2.0`, has no simultaneous role minima, uses `window` only for rows and `top` for columns,
-and preserves all four sample bindings.
+same manifest indirection the host uses. The corrected `1.0.3.0` PBIP retains the mapping and
+secondary-reduction fixes from the prior repair; its Desktop refresh, Save As, close/reopen, and
+final-render evidence is recorded in the release handoff before submission.
 
 ### Reproducibility scope
 
@@ -508,18 +504,20 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `daf4032d4c5abbd49b7a684239dcf4826e817fe874352448d9bec73566e1f0dc` | 21,908 bytes |
+| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133` | 21,909 bytes |
 
 **Confirmed identical across three consecutive local builds**, so
-`daf4032d4c5abbd49b7a684239dcf4826e817fe874352448d9bec73566e1f0dc`
-at 21,908 bytes is the value to publish in the release manifest, under
-`cohort-retention/1.0.2.0/`.
+`d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133`
+at 21,909 bytes is the value to publish in the release manifest, under
+`cohort-retention/1.0.3.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from
 `dist/package-metadata.json` of the build whose `.pbiviz` you actually upload, and never mix a
 hash from one environment with a binary from another.
 
 **Do not publish any earlier hash.** Superseded, newest first:
+`daf4032d4c5abbd49b7a684239dcf4826e817fe874352448d9bec73566e1f0dc` (21,908 bytes — the
+`1.0.2.0` package already submitted and in progress in Partner Center, superseded by `1.0.3.0`),
 `caad178bbd3c578d941e5031aeb53756847dbefc36b64d34ca3bc04dc0fb5130` (21,904 bytes — the
 first `1.0.2.0` role-condition repair, superseded by the live-validated matrix reduction fix),
 `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` (21,827 bytes — the
@@ -686,7 +684,7 @@ Partner Center and publishing actions cannot be completed from this repository.
 5. **Upload the logo and the three screenshots** from `assets/`, and the refreshed
    `.pbix` from step 1.
 6. **Re-publish the release manifest and the Azure Blob artifact** at the new
-   version-keyed path `cohort-retention/1.0.2.0/atlyn-cohort-retention.pbiviz`, with
+   version-keyed path `cohort-retention/1.0.3.0/atlyn-cohort-retention.pbiviz`, with
    the new `.pbiviz` SHA-256 and byte size from
    [section 9](#9-packaged-artifact). Leave the superseded
    `cohort-retention/1.0.0.0/` artifact alone rather than overwriting it; the whole
@@ -695,7 +693,7 @@ Partner Center and publishing actions cannot be completed from this repository.
 
 ## 12. Status
 
-This repository has satisfied every submission requirement it controls, and the
-1.0.2.0 package plus refreshed sample have been validated in a live Power BI
-Desktop host. Nothing in this document asserts Microsoft certification or Partner
-Center approval; neither has been obtained.
+This repository has satisfied every submission requirement it controls for the
+`1.0.3.0` package. Desktop validation evidence is required before handoff, and
+nothing in this document asserts Microsoft certification or Partner Center approval;
+neither has been obtained.

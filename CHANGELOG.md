@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+- **Advanced the corrected release to `1.0.3.0` (`package.json` `1.0.3`).** Partner Center
+  already has `1.0.2.0` submitted and in progress, so this release uses a higher version and
+  must not reuse that package or its sample PBIX.
 - **Repaired Microsoft certification failure 1180.2.12 and advanced the visual to
-  `1.0.2.0` (`package.json` `1.0.2`).** The only data-view mapping condition required both
+  `1.0.2.0` (`package.json` `1.0.2`) in the prior release.** The only data-view mapping condition required both
   `Cohort` and `Period` with `min: 1`. Microsoft documents that only one data role may have
   `min >= 1` in a condition; because conditions gate every field-well update, neither role
   could be assigned first and the visual never received a data view. Both minima are removed
@@ -24,15 +27,13 @@
   saying no data is available.
 - Corrected the submission privacy URL to `https://atlynco.com/legal/privacy` in the
   generated release metadata, dossier, EULA, and tests.
-- The submission-ready package is
-  `daf4032d4c5abbd49b7a684239dcf4826e817fe874352448d9bec73566e1f0dc` at 21,908 bytes.
-  It is deterministic across three consecutive local builds, contains the repaired
-  capabilities and version `1.0.2.0`, and supersedes every `1.0.1.0` artifact.
-- Refreshed the generated sample in Power BI Desktop 2.156.951.0, saved it as
-  `AtlynCohortRetention.pbix`, and reopened that exact binary. Desktop showed no
-  visual query error, retained all four sample bindings, and displayed the visible
-  usage subtitle. The PBIX is delivered outside version control with the release
-  handoff.
+- The submission-ready `1.0.3.0` package is
+  `d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133` at 21,909 bytes.
+  It is deterministic across three consecutive local builds and contains the repaired
+  capabilities and version `1.0.3.0`; the already-submitted `1.0.2.0` artifact is superseded.
+- The `1.0.3.0` sample PBIX is intentionally pending the shared Power BI Desktop slot. It must
+  be refreshed, rendered, saved under `dist/release/AtlynCohortRetention.pbix`, closed, reopened,
+  and final-rendered before its hash and Desktop evidence are recorded.
 
 - **Closed the recorded-hash gap.** The packaged `.pbiviz` SHA-256 and byte size, and the
   icon, logo, and screenshot hashes, are quoted in `docs/partner-center-submission.md` and

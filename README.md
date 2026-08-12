@@ -143,7 +143,7 @@ has no data source at all and never prompts for credentials, and the built visua
 is embedded through `resourcePackages` + `Report/CustomVisuals/<GUID>/` rather than
 `publicCustomVisuals`. See [`samples/README.md`](samples/README.md), including the
 Power BI Desktop refresh, "Save As .pbix", and reopen procedure used to create a
-submission binary. The 1.0.2.0 repair handoff includes that refreshed PBIX. Both
+submission binary. The 1.0.3.0 repair handoff includes that refreshed PBIX. Both
 the screenshots and the sample report draw their numbers from
 `scripts/cohort-dataset.js`, so they tell the same story.
 
