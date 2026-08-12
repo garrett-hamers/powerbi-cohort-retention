@@ -9,15 +9,21 @@
   },
   "resourcePackages": [
     {
-      "name": "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11",
-      "type": "CustomVisual",
+      "name": "RegisteredResources",
+      "type": "RegisteredResources",
       "items": [
         {
-          "name": "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json",
-          "path": "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json",
-          "type": "CustomVisualMetadata"
+          "name": "atlynCohortRetention.atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz",
+          "path": "CustomVisuals/atlynCohortRetention.atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz",
+          "type": 5
         }
       ]
+    }
+  ],
+  "customVisuals": [
+    {
+      "name": "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11",
+      "version": "1.0.3.0"
     }
   ],
   "settings": {

@@ -15,12 +15,12 @@
  *
  * This module is the single source of truth for that shape, shared by `scripts/package.js`
  * (which zips the two files into the `.pbiviz`) and `scripts/generate-sample-report.js`
- * (which writes the same two files under `Report/CustomVisuals/<GUID>/` to embed the visual
- * in the offline sample report).
+ * (which embeds that same archive in the report's RegisteredResources).
  */
 
 const fs = require("node:fs");
 const path = require("node:path");
+const JSZip = require("jszip");
 
 const root = path.resolve(__dirname, "..");
 
@@ -148,9 +148,49 @@ function resourceEntryName(guid) {
   return `resources/${guid}.pbiviz.json`;
 }
 
+/** The deterministic filename used when a PBIVIZ is registered in a PBIP report. */
+function registeredResourceFilename(pbiviz) {
+  const safeName =
+    pbiviz.visual.name.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "visual";
+  return `${safeName}.${pbiviz.visual.guid}.pbiviz`;
+}
+
+/**
+ * Builds the exact deterministic archive used by the product package and the PBIP sample.
+ *
+ * Power BI Desktop resolves a private visual from the PBIVIZ archive registered in
+ * StaticResources/RegisteredResources, so the sample must carry these exact bytes rather than
+ * an unpacked approximation of the package.
+ */
+async function buildVisualArchive(descriptor, definition) {
+  const resourcePath = resourceEntryName(descriptor.visual.guid);
+  const entryOptions = {
+    date: new Date("2000-01-01T00:00:00.000Z"),
+    createFolders: false,
+    unixPermissions: 0o644,
+    dosPermissions: 0
+  };
+
+  const archive = new JSZip();
+  archive.file("package.json", `${JSON.stringify(descriptor, null, 2)}\n`, entryOptions);
+  archive.file("resources/", null, { ...entryOptions, dir: true });
+  archive.file(resourcePath, JSON.stringify(definition), entryOptions);
+
+  return archive.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 9 },
+    platform: "DOS",
+    streamFiles: false,
+    comment: ""
+  });
+}
+
 module.exports = {
+  buildVisualArchive,
   buildVisualPackage,
   pluginRegistration,
+  registeredResourceFilename,
   readStringResources,
   readText,
   resourceEntryName

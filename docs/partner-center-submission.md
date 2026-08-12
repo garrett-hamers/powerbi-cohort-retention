@@ -171,7 +171,7 @@ kind — a source gate in `npm run package` enforces that.
 | Data | DAX calculated table, 82 `DATATABLE(...)` rows, 16 monthly cohorts x 12 relative periods |
 | Data sources | **None at all** |
 | External connections | **None** |
-| Visual delivery | Embedded via `resourcePackages` + `Report/CustomVisuals/<GUID>/`, not `publicCustomVisuals` |
+| Visual delivery | Exact `.pbiviz` archive embedded in `Report/StaticResources/RegisteredResources/` and registered in `resourcePackages`/`customVisuals`, not `publicCustomVisuals` |
 | Regenerate | `npm run build && npm run sample:report` |
 
 See `samples/README.md` for the full layout and field bindings.
@@ -570,7 +570,7 @@ built package:
 | Artifact | Where the CSS lives | Bytes |
 | --- | --- | --- |
 | `dist/atlyn-cohort-retention.pbiviz` | `content.css` in `resources/<GUID>.pbiviz.json` | 5,167 |
-| `samples/…/CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json` | `content.css` | 5,167 |
+| `samples/…/StaticResources/RegisteredResources/<name>.<GUID>.pbiviz` | `content.css` inside the matching PBIVIZ resource | 5,167 |
 
 Both are byte-identical to `style/visual.less`, and `content.css` is the field Power BI
 injects as the visual's stylesheet. Both are produced by the same

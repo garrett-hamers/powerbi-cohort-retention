@@ -26,9 +26,8 @@ samples/
 │   │   ├── pages/pages.json
 │   │   └── pages/<pageId>/page.json
 │   │       └── visuals/<visualId>/visual.json
-│   └── CustomVisuals/<GUID>/
-│       ├── package.json
-│       └── resources/<GUID>.pbiviz.json
+│   └── StaticResources/RegisteredResources/
+│       └── <visual-name>.<GUID>.pbiviz
 └── AtlynSample.SemanticModel/
     ├── definition.pbism
     └── definition/
@@ -69,12 +68,13 @@ all, so there is no data source to authenticate, no credential prompt, and no
 refresh dependency. There is deliberately no `dataSources.tmdl` and no
 `expressions.tmdl`.
 
-The visual is embedded in the report through `resourcePackages` plus
-`Report/CustomVisuals/<GUID>/`. Microsoft documents that folder as holding
-**private** custom visuals, while AppSource and Organization visuals "are loaded
-automatically by Power BI Desktop" — which is exactly why `publicCustomVisuals`
-would resolve from the store at open time and would **not** be offline. A test
-asserts it stays absent.
+The visual is embedded as the exact product `.pbiviz` archive in
+`Report/StaticResources/RegisteredResources/`. `definition/report.json` registers
+that file in the `RegisteredResources` package with the native custom-visual
+resource type `5` and records the matching `customVisuals` GUID/version entry.
+This is the format Power BI Desktop loads for a private custom visual. A
+`publicCustomVisuals` entry would resolve from the AppSource store at open time
+and would **not** be offline, so a test asserts it stays absent.
 
 ## Definition versions
 
@@ -205,8 +205,9 @@ the same story.
 
 ## Embedded visual format
 
-`CustomVisuals/<GUID>/**` is generated to match the format produced by the
-official packager, read directly from the installed
+The file in `StaticResources/RegisteredResources/` is the exact deterministic
+`.pbiviz` archive produced for the product package. Its contents match the
+format produced by the official packager, read directly from the installed
 `node_modules/powerbi-visuals-webpack-plugin/src/index.js`:
 
 - `generatePbiviz()` writes exactly `package.json` and

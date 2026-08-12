@@ -216,8 +216,9 @@ describe("clean visual package metadata", () => {
     });
     const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), "utf8");
     expect(packageScript).toContain("buildVisualPackage");
-    expect(packageScript).toContain('date: new Date("2000-01-01T00:00:00.000Z")');
     const visualPackage = fs.readFileSync(path.join(root, "scripts", "visual-package.js"), "utf8");
+    expect(visualPackage).toContain("buildVisualArchive");
+    expect(visualPackage).toContain('date: new Date("2000-01-01T00:00:00.000Z")');
     expect(visualPackage).toContain("stringResources");
     const metadataPath = path.join(root, "dist", "package-metadata.json");
     if (fs.existsSync(metadataPath)) {

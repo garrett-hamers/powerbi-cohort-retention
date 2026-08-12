@@ -139,8 +139,9 @@ captures are non-scrolling by construction; see
 `scripts/generate-sample-report.js` builds the offline sample report as a native
 Power BI Project (PBIP) with a PBIR report definition and a TMDL semantic model.
 Its only table is a DAX calculated table built with `DATATABLE(...)`, so the model
-has no data source at all and never prompts for credentials, and the built visual
-is embedded through `resourcePackages` + `Report/CustomVisuals/<GUID>/` rather than
+has no data source at all and never prompts for credentials, and the exact built
+visual archive is embedded through `Report/StaticResources/RegisteredResources/`
+and registered in `resourcePackages`/`customVisuals` rather than
 `publicCustomVisuals`. See [`samples/README.md`](samples/README.md), including the
 Power BI Desktop refresh, "Save As .pbix", and reopen procedure used to create a
 submission binary. The 1.0.3.0 repair handoff includes that refreshed PBIX. Both

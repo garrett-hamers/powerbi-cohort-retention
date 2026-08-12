@@ -4,7 +4,7 @@ const path = require("node:path");
 const JSZip = require("jszip");
 const less = require("less");
 const { getSourceManifest } = require("./package-manifest");
-const { resourceEntryName } = require("./visual-package");
+const { registeredResourceFilename, resourceEntryName } = require("./visual-package");
 const { findRecordedValueDrift, readSupersededHashes } = require("./doc-hash-gate");
 const { findDataRoleMappingProblems } = require("./data-role-mapping-audit");
 const { packagedCssMatchesSource } = require("./package-freshness");
@@ -14,6 +14,7 @@ const pbiviz = readJson("pbiviz.json");
 const capabilities = readJson("capabilities.json");
 const packageJson = readJson("package.json");
 const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), "utf8");
+const visualPackageScript = fs.readFileSync(path.join(root, "scripts", "visual-package.js"), "utf8");
 const metadataPath = path.join(root, "dist", "package-metadata.json");
 const publicationMetadataPath = path.join(root, "dist", "publication-readiness.json");
 const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
@@ -140,7 +141,8 @@ assert(
   "the package script must build the official two-file .pbiviz layout"
 );
 assert(
-  packageScript.includes('date: new Date("2000-01-01T00:00:00.000Z")'),
+  visualPackageScript.includes("buildVisualArchive") &&
+    visualPackageScript.includes('date: new Date("2000-01-01T00:00:00.000Z")'),
   "package entry timestamps are not pinned, so the artifact would not be reproducible"
 );
 
@@ -353,13 +355,11 @@ for (const relativePath of [
   path.join(`${sampleProject}.Report`, "definition", "version.json"),
   path.join(`${sampleProject}.Report`, "definition", "report.json"),
   path.join(`${sampleProject}.Report`, "definition", "pages", "pages.json"),
-  path.join(`${sampleProject}.Report`, "CustomVisuals", expectedGuid, "package.json"),
   path.join(
     `${sampleProject}.Report`,
-    "CustomVisuals",
-    expectedGuid,
-    "resources",
-    `${expectedGuid}.pbiviz.json`
+    "StaticResources",
+    "RegisteredResources",
+    registeredResourceFilename(pbiviz)
   )
 ]) {
   assert(fs.existsSync(path.join(sampleRoot, relativePath)), `the sample report is missing ${relativePath}`);
@@ -434,8 +434,37 @@ assert(
   sampleReportJson.publicCustomVisuals === undefined,
   "the sample report must embed the visual, not resolve it from the AppSource store"
 );
-const samplePackage = sampleReportJson.resourcePackages?.find((entry) => entry.type === "CustomVisual");
-assert(samplePackage?.name === expectedGuid, "the sample report does not embed this visual");
+const sampleResourceFilename = registeredResourceFilename(pbiviz);
+const samplePackage = sampleReportJson.resourcePackages?.find(
+  (entry) => entry.name === "RegisteredResources" && entry.type === "RegisteredResources"
+);
+assert(samplePackage, "the sample report does not register its visual in RegisteredResources");
+assert(
+  JSON.stringify(samplePackage.items) ===
+    JSON.stringify([
+      {
+        name: sampleResourceFilename,
+        path: `CustomVisuals/${sampleResourceFilename}`,
+        type: 5
+      }
+    ]),
+  "the sample report's RegisteredResources entry is not the native private-visual shape"
+);
+assert(
+  JSON.stringify(sampleReportJson.customVisuals) ===
+    JSON.stringify([{ name: expectedGuid, version: pbiviz.visual.version }]),
+  "the sample report customVisuals registration is missing or stale"
+);
+const sampleResourcePath = path.join(
+  sampleReport,
+  "StaticResources",
+  "RegisteredResources",
+  sampleResourceFilename
+);
+assert(
+  fs.readFileSync(sampleResourcePath).equals(fs.readFileSync(packagePath)),
+  "the sample's embedded PBIVIZ bytes do not match the packaged release"
+);
 
 const samplePages = path.join(sampleReport, "definition", "pages");
 const samplePageDirectories = fs
@@ -514,36 +543,6 @@ for (const file of sampleTmdlFiles) {
   );
 }
 
-const sampleVisualBundle = JSON.parse(
-  fs.readFileSync(
-    path.join(sampleReport, "CustomVisuals", expectedGuid, "resources", `${expectedGuid}.pbiviz.json`),
-    "utf8"
-  )
-);
-assert(sampleVisualBundle.visual?.guid === expectedGuid, "the embedded visual GUID does not match source");
-assert(
-  sampleVisualBundle.visual?.version === pbiviz.visual.version,
-  "the embedded visual version is stale; re-run npm run sample:report"
-);
-assert(
-  JSON.stringify(sampleVisualBundle.capabilities) === JSON.stringify(capabilities),
-  "the embedded visual capabilities are stale; re-run npm run sample:report"
-);
-assert(
-  sampleVisualBundle.content?.js?.includes(`powerbiGlobal.visuals.plugins[${JSON.stringify(expectedGuid)}]`),
-  "the embedded visual bundle does not register its plugin"
-);
-// Power BI injects `content.css` as the visual's stylesheet. This project packages by hand
-// instead of using powerbi-visuals-webpack-plugin, which derives the CSS from a webpack-emitted
-// asset, so nothing here would notice if the stylesheet silently stopped being carried.
-assert(
-  typeof sampleVisualBundle.content?.css === "string" && sampleVisualBundle.content.css.trim() !== "",
-  "the embedded visual bundle ships no CSS; the visual would render completely unstyled"
-);
-assert(
-  sampleVisualBundle.content.css === stylesheetSource,
-  "the embedded visual CSS is stale; re-run npm run sample:report"
-);
 // The committed submission screenshots are only truthful if the harness renders with the real
 // stylesheet. Losing this link would silently produce unstyled captures that still pass the
 // dimension and byte-size gates.
@@ -571,9 +570,9 @@ assert(
 
 /**
  * The GUID cascades through pbiviz.json, the packaged manifest and resource entry name, the
- * plugin registration, the sample report's `CustomVisuals/<GUID>/` tree, `resourcePackages`, and
- * `visualType`. A single missed occurrence would leave the sample report binding a visual the
- * package no longer registers, which nothing else here would catch. The previous GUID was the
+ * plugin registration, the sample report's RegisteredResources archive, `resourcePackages`,
+ * `customVisuals`, and `visualType`. A single missed occurrence would leave the sample report
+ * binding a visual the package no longer registers, which nothing else here would catch. The previous GUID was the
  * hyphenated UUID this one preserves, so it must not appear anywhere except the two documents
  * that record the change deliberately.
  */

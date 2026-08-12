@@ -21,11 +21,11 @@
  *   and no refresh dependency. This is a stronger offline guarantee than an inline
  *   Power Query literal, which still counts as a query.
  *
- * - **Visual embedded under `Report/CustomVisuals/<GUID>/`** and declared in
- *   `report.json` `resourcePackages`. Microsoft documents this folder as holding
- *   *private* custom visuals, while AppSource and Organization visuals are loaded
- *   automatically by Desktop. `publicCustomVisuals` would therefore resolve from the
- *   AppSource store at open time and would not be offline.
+ * - **Visual embedded as the exact PBIVIZ archive under
+ *   `Report/StaticResources/RegisteredResources/`** and registered in `report.json`. This is
+ *   the native private-visual resource shape Power BI Desktop loads from a PBIP report.
+ *   `publicCustomVisuals` would resolve from the AppSource store at open time and would not be
+ *   offline.
  *
  * Usage: npm run build && npm run sample:report
  */
@@ -34,7 +34,11 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { triangleRecords } = require("./cohort-dataset");
-const { buildVisualPackage, readText } = require("./visual-package");
+const {
+  buildVisualArchive,
+  buildVisualPackage,
+  registeredResourceFilename
+} = require("./visual-package");
 
 const root = path.resolve(__dirname, "..");
 const samples = path.join(root, "samples");
@@ -250,7 +254,7 @@ function buildVisual(guid) {
   };
 }
 
-function main() {
+async function main() {
   const bundlePath = path.join(root, "dist", "visual.js");
   if (!fs.existsSync(bundlePath)) {
     throw new Error("dist/visual.js is missing. Run `npm run build` before generating the sample report.");
@@ -322,17 +326,18 @@ function main() {
       },
       resourcePackages: [
         {
-          name: guid,
-          type: "CustomVisual",
+          name: "RegisteredResources",
+          type: "RegisteredResources",
           items: [
             {
-              name: `${guid}.pbiviz.json`,
-              path: `${guid}.pbiviz.json`,
-              type: "CustomVisualMetadata"
+              name: registeredResourceFilename(pbiviz),
+              path: `CustomVisuals/${registeredResourceFilename(pbiviz)}`,
+              type: 5
             }
           ]
         }
       ],
+      customVisuals: [{ name: guid, version: pbiviz.visual.version }],
       settings: {
         useStylableVisualContainerHeader: true,
         defaultDrillFilterOtherVisuals: true
@@ -365,11 +370,11 @@ function main() {
     )
   );
 
-  written.push(writeJson(`${reportFolder}/CustomVisuals/${guid}/package.json`, descriptor));
+  const archive = await buildVisualArchive(descriptor, definition);
   written.push(
     write(
-      `${reportFolder}/CustomVisuals/${guid}/resources/${guid}.pbiviz.json`,
-      `${JSON.stringify(definition)}\n`
+      `${reportFolder}/StaticResources/RegisteredResources/${registeredResourceFilename(pbiviz)}`,
+      archive
     )
   );
 
@@ -382,4 +387,7 @@ function main() {
   );
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
