@@ -502,6 +502,23 @@ same manifest indirection the host uses. The corrected `1.0.3.0` PBIP retains th
 secondary-reduction fixes from the prior repair; its Desktop refresh, Save As, close/reopen, and
 final-render evidence is recorded in the release handoff before submission.
 
+### Native PBIX release handoff artifact
+
+The owner-controlled native report handoff is kept as a separate artifact from the packaged
+`.pbiviz` and is not rebuilt by `npm run package`.
+
+| Field | Value |
+| --- | --- |
+| Path | `dist/release/AtlynCohortRetention.pbix` |
+| SHA-256 | `A6ED6EB1F49DB4CF65DA672C7DC5BF229BD055997F14A0869D101465285B772A` |
+| Size | 43,056 bytes |
+| Validation status | Refresh, Save As, close/reopen, and final-render checks completed in Desktop; final payload shows 16 cohorts x 12 periods, latest observed period 11, and 2024-01/Period 1 = 61.8% |
+| Evidence | `C:\Users\ghamers\.copilot\chats\17d9edc4-eb66-4a62-b840-b001d87c9983\desktop-validation\cohort\evidence\native-run-pre-save` and `...\native-run-final` |
+
+This is the exact binary that the owner should hand to Partner Center after the repo's local
+packing and certification gates have passed; it is not a replacement for the reproducible
+`.pbiviz` artifact and it remains outside the package-bytes audit.
+
 ### Reproducibility scope
 
 `npm run package` is byte-for-byte reproducible: `scripts/reproducibility-check.js`
