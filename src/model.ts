@@ -197,12 +197,16 @@ export function buildCohortModel(
   if (columnTree.leaves.length === 0) diagnostics.push("No relative period columns were supplied.");
   if (metric.diagnostic) diagnostics.push(metric.diagnostic);
 
-  const allColumns = columnTree.leaves
+  const effectiveColumnNodes = deriveEffectiveColumnNodes(columnTree, valueSources);
+  const allColumns = effectiveColumnNodes
     .map((node, sourcePosition) => ({
       key: node.key,
       label: node.label || `Period ${sourcePosition}`,
       position: sourcePosition,
-      sourcePosition: node.leafIndex ?? sourcePosition,
+      sourcePosition:
+        node.leafIndex !== undefined && !isImplicitPeriodParentColumn(node, columnTree.root, valueSources)
+          ? node.leafIndex
+          : sourcePosition,
       level: node.level,
       parentKey: node.parentKey,
       periodIndex: parsePeriodIndex(node.node),
@@ -378,57 +382,70 @@ export function readMatrixValue(
     return { present: false, value: null };
   }
 
-  const candidates: Array<{ value: unknown; direct: boolean }> = [];
   if (Array.isArray(values)) {
     const direct = values[columnPosition];
-    if (direct !== undefined) {
-      candidates.push({ value: direct, direct: true });
+    if (isNestedDirectValue(direct)) {
+      const directResult = readValueCandidate(direct, measureIndex, true);
+      if (directResult) return directResult;
+      return { present: false, value: null };
     }
     const linear = values[columnPosition * Math.max(1, sourceCount) + measureIndex];
-    if (linear !== undefined && linear !== direct) {
-      candidates.push({ value: linear, direct: false });
+    if (linear !== undefined) {
+      const linearResult = readValueCandidate(linear, measureIndex, true);
+      if (linearResult) return linearResult;
     }
-  } else if (isRecord(values)) {
-    const direct = values[String(columnPosition)];
-    const hasDirect = Object.prototype.hasOwnProperty.call(values, String(columnPosition));
-    if (direct !== undefined) {
-      candidates.push({ value: direct, direct: true });
+    if (direct !== undefined && !isNestedDirectValue(direct)) {
+      const directFallback = readValueCandidate(direct, measureIndex, sourceCount <= 1 || measureIndex === 0);
+      if (directFallback) return directFallback;
     }
-    if (!hasDirect) {
+    return { present: false, value: null };
+  }
+
+  if (isRecord(values)) {
+    const directKey = String(columnPosition);
+    const direct = values[directKey];
+    if (isNestedDirectValue(direct)) {
+      const directResult = readValueCandidate(direct, measureIndex, true);
+      if (directResult) return directResult;
+      return { present: false, value: null };
+    }
+
+    if (sourceCount > 1) {
       const linearKey = String(columnPosition * Math.max(1, sourceCount) + measureIndex);
       const linear = values[linearKey];
       if (linear !== undefined) {
-        candidates.push({ value: linear, direct: false });
+        const linearResult = readValueCandidate(linear, measureIndex, true);
+        if (linearResult) return linearResult;
       }
-      if (columnPosition === 0) {
-        const measure = values[String(measureIndex)];
-        if (measure !== undefined && measure !== linear) {
-          candidates.push({ value: measure, direct: false });
-        }
-      }
+    }
 
-      for (const [key, candidate] of Object.entries(values)) {
-        const numericKey = Number(key);
-        if (!Number.isInteger(numericKey)) continue;
-        if (
-          numericKey !== columnPosition &&
-          numericKey !== columnPosition * Math.max(1, sourceCount) + measureIndex
-        ) {
-          continue;
-        }
-        candidates.push({ value: candidate, direct: false });
+    if (direct !== undefined && !isNestedDirectValue(direct)) {
+      const directFallback = readValueCandidate(direct, measureIndex, sourceCount <= 1 || measureIndex === 0);
+      if (directFallback) return directFallback;
+    }
+
+    if (columnPosition === 0) {
+      const measure = values[String(measureIndex)];
+      if (measure !== undefined) {
+        const measureResult = readValueCandidate(measure, measureIndex, sourceCount <= 1 || measureIndex === 0);
+        if (measureResult) return measureResult;
       }
+    }
+
+    for (const [key, candidate] of Object.entries(values)) {
+      const numericKey = Number(key);
+      if (!Number.isInteger(numericKey)) continue;
+      if (
+        numericKey !== columnPosition &&
+        numericKey !== columnPosition * Math.max(1, sourceCount) + measureIndex
+      ) {
+        continue;
+      }
+      const nestedResult = readValueCandidate(candidate, measureIndex, sourceCount <= 1 || measureIndex === 0);
+      if (nestedResult) return nestedResult;
     }
   }
 
-  for (const candidate of candidates) {
-    const result = readValueCandidate(
-      candidate.value,
-      measureIndex,
-      !candidate.direct || sourceCount <= 1 || measureIndex === 0
-    );
-    if (result) return result;
-  }
   return { present: false, value: null };
 }
 
@@ -971,6 +988,46 @@ function readNestedValues(values: unknown, measureIndex: number): MatrixValueRea
     return nested === undefined ? null : readValueCandidate(nested, measureIndex, true);
   }
   return null;
+}
+
+function deriveEffectiveColumnNodes(
+  tree: MatrixTree,
+  valueSources: powerbi.DataViewMetadataColumn[]
+): MatrixNodeRef[] {
+  const rootChildren = tree.root?.children ?? [];
+  if (
+    valueSources.length > 1 &&
+    rootChildren.length > 0 &&
+    rootChildren.every((node) => isImplicitPeriodColumn(node, valueSources))
+  ) {
+    return rootChildren;
+  }
+  return tree.leaves;
+}
+
+function isImplicitPeriodColumn(node: MatrixNodeRef, valueSources: powerbi.DataViewMetadataColumn[]): boolean {
+  if (parsePeriodIndex(node.node) === null || node.children.length !== valueSources.length) {
+    return false;
+  }
+
+  return node.children.every((child, index) => {
+    if (child.children.length > 0) return false;
+    if (parsePeriodIndex(child.node) !== null) return false;
+    if (child.node.identity !== undefined) return false;
+    if (child.node.value !== undefined && child.node.value !== null && child.node.value !== "") return false;
+    const sourceIndex = toFiniteNumber(child.node.levelSourceIndex);
+    if (index === 0) return sourceIndex === null || sourceIndex === 0;
+    return sourceIndex === index;
+  });
+}
+
+function isImplicitPeriodParentColumn(node: MatrixNodeRef, root: MatrixNodeRef | undefined, valueSources: powerbi.DataViewMetadataColumn[]): boolean {
+  if (!root) return false;
+  return root.children.includes(node) && isImplicitPeriodColumn(node, valueSources);
+}
+
+function isNestedDirectValue(value: unknown): boolean {
+  return Array.isArray(value) || (isRecord(value) && Object.prototype.hasOwnProperty.call(value, "values"));
 }
 
 function compareColumns(

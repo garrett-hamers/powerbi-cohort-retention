@@ -424,8 +424,8 @@ state also gives actionable role-well guidance.
 | Visual version | `1.0.3.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.3.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `f55ddede50b575a1dc072a6751a3416f7621e2a48cbf1acc0ba608b9810da593` |
-| Size | 21,904 bytes |
+| SHA-256 | `54b6f0ed7ca9e725b0d9d8a36530b8efb6e1e49f4170a06c542e5ee3abbdb602` |
+| Size | 22,311 bytes |
 | Packaged CSS | 5,167 bytes, inline as `content.css` |
 | Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
@@ -518,11 +518,11 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `f55ddede50b575a1dc072a6751a3416f7621e2a48cbf1acc0ba608b9810da593` | 21,904 bytes |
+| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `54b6f0ed7ca9e725b0d9d8a36530b8efb6e1e49f4170a06c542e5ee3abbdb602` | 22,311 bytes |
 
 **Confirmed identical across three consecutive local builds**, so
-`f55ddede50b575a1dc072a6751a3416f7621e2a48cbf1acc0ba608b9810da593`
-at 21,904 bytes is the value to publish in the release manifest, under
+`54b6f0ed7ca9e725b0d9d8a36530b8efb6e1e49f4170a06c542e5ee3abbdb602`
+at 22,311 bytes is the value to publish in the release manifest, under
 `cohort-retention/1.0.3.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from
@@ -530,6 +530,8 @@ If the values ever diverge, take the authoritative hash and byte size from
 hash from one environment with a binary from another.
 
 **Do not publish any earlier hash.** Superseded, newest first:
+`f55ddede50b575a1dc072a6751a3416f7621e2a48cbf1acc0ba608b9810da593` (21,904 bytes — the
+previous `1.0.3.0` package before the native matrix parser repair),
 `233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96` (21,914 bytes — the
 previous `1.0.3.0` package before removing unsupported matrix expand/collapse metadata),
 `d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133` (21,909 bytes — the

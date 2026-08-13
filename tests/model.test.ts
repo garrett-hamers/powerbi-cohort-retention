@@ -1,6 +1,7 @@
 import {
   buildCohortModel,
   MatrixDataView,
+  readMatrixValue,
   resolveMetric
 } from "../src/model";
 
@@ -403,6 +404,69 @@ describe("cohort matrix model", () => {
       key: '{"key":"month-jan"}|{"key":"period-0"}',
       kind: "cell"
     });
+  });
+
+  test("reads flattened multi-source values even when a direct key exists", () => {
+    const values = {
+      0: { value: 100 },
+      1: { value: 1000, valueSourceIndex: 1 },
+      2: { value: 80 },
+      3: { value: 1000, valueSourceIndex: 1 },
+      4: { value: 60 },
+      5: { value: 1000, valueSourceIndex: 1 }
+    };
+
+    expect(readMatrixValue(values, 0, 0, 2)).toMatchObject({ present: true, value: 100 });
+    expect(readMatrixValue(values, 0, 1, 2)).toMatchObject({ present: true, value: 1000 });
+    expect(readMatrixValue(values, 1, 0, 2)).toMatchObject({ present: true, value: 80 });
+    expect(readMatrixValue(values, 1, 1, 2)).toMatchObject({ present: true, value: 1000 });
+  });
+
+  test("prefers the direct nested period object before the flattened linear key", () => {
+    const values = {
+      0: { values: { 0: 20, 1: 100 } },
+      1: { values: { 0: 10, 1: 50 } }
+    };
+
+    expect(readMatrixValue(values, 0, 1, 2)).toMatchObject({ present: true, value: 100 });
+    expect(readMatrixValue(values, 1, 0, 2)).toMatchObject({ present: true, value: 10 });
+  });
+
+  test("derives semantic period columns from Desktop's implicit measure-child period nodes", () => {
+    const retained = [1240, 766, 630, 559, 517, 489, 467, 451, 439, 429, 422, 415];
+    const columns = Array.from({ length: 12 }, (_unused, periodIndex) => ({
+      value: periodIndex,
+      level: 0,
+      levelValues: [{ value: periodIndex, levelSourceIndex: 0 }],
+      children: [
+        { level: 1 },
+        { level: 1, levelSourceIndex: 1 }
+      ]
+    }));
+    const rowValues = Object.fromEntries(
+      retained.flatMap((count, periodIndex) => [
+        [String(periodIndex * 2), { value: count }],
+        [String(periodIndex * 2 + 1), { value: 1240, valueSourceIndex: 1 }]
+      ])
+    );
+
+    const model = buildCohortModel(
+      matrix(
+        [{ value: "2024-01", identity: { key: "cohort-a" }, values: rowValues }],
+        columns,
+        [source("Retained", { Retained: true }), source("CohortSize", { CohortSize: true })]
+      )
+    );
+
+    expect(model.columns).toHaveLength(12);
+    expect(model.columns.map((column) => column.periodIndex)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(model.diagnostics.some((message) => /Every Period value|Period 0 is required/i.test(message))).toBe(false);
+    expect(model.latestObservablePeriod).toBe(11);
+    expect(model.rows[0].cells[0].status).toBe("observed");
+    expect(model.rows[0].cells[0].value).toBe(1);
+    expect(model.rows[0].cells[1].value).toBeCloseTo(0.618, 3);
+    expect(model.rows[0].cells[2].value).toBeCloseTo(0.508, 3);
+    expect(model.rows[0].cells[11].value).toBeCloseTo(0.335, 3);
   });
 
   test("reports ambiguous role sets instead of silently choosing one", () => {
