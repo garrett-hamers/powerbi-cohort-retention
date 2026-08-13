@@ -149,7 +149,7 @@ assert(
 const mapping = capabilities.dataViewMappings?.[0]?.matrix;
 assert(mapping?.rows?.dataReductionAlgorithm?.window?.count === 500, "row reduction must be 500");
 assert(mapping?.columns?.dataReductionAlgorithm?.top?.count === 500, "column reduction must be 500");
-assert(capabilities.expandCollapse?.roles?.join(",") === "Cohort,Period", "expand/collapse roles changed");
+assert(!("expandCollapse" in capabilities), "expand/collapse must remain absent for the flat matrix");
 assert(capabilities.subtotals?.matrix?.rowSubtotals?.defaultValue === true, "row subtotals must be enabled");
 assert(capabilities.subtotals?.matrix?.columnSubtotals?.defaultValue === true, "column subtotals must be enabled");
 assert(
@@ -157,7 +157,7 @@ assert(
     JSON.stringify([{ role: "Period", direction: 1 }]),
   "Period sorting is not explicit"
 );
-assert(!("drill" in capabilities), "drill declarations must remain absent");
+assert(!("drilldown" in capabilities), "drilldown declarations must remain absent");
 const mappingProblems = findDataRoleMappingProblems(capabilities);
 assert(
   mappingProblems.length === 0,

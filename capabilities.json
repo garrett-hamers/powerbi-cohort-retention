@@ -281,14 +281,6 @@
       ]
     }
   },
-  "expandCollapse": {
-    "roles": ["Cohort", "Period"],
-    "addDataViewFlags": {
-      "defaultValue": true
-    },
-    "supportsMerge": true,
-    "restoreProjectionsOrderFromBookmark": true
-  },
   "subtotals": {
     "matrix": {
       "rowSubtotals": {

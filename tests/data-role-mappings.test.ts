@@ -59,12 +59,42 @@ describe("incremental data role assignment", () => {
     expect(selectors).toContainEqual({ for: { in: "Tooltip" } });
   });
 
+  test("does not advertise expand/collapse for the flat matrix", () => {
+    expect(capabilities.expandCollapse).toBeUndefined();
+  });
+
   test("reproduces and rejects iterated single-field matrix measures", () => {
     const rejected = JSON.parse(JSON.stringify(capabilities));
     rejected.dataViewMappings[0].matrix.values.select[0] = { for: { in: "Retained" } };
 
     expect(findDataRoleMappingProblems(rejected)).toContainEqual(
       expect.stringContaining("matrix.values selector for Retained must use bind.to")
+    );
+  });
+
+  test("rejects expand/collapse on a matrix column without drill support", () => {
+    const rejected = JSON.parse(JSON.stringify(capabilities));
+    rejected.expandCollapse = {
+      roles: ["Cohort", "Period"],
+      addDataViewFlags: { defaultValue: true }
+    };
+
+    const problems = findDataRoleMappingProblems(rejected);
+    expect(problems).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("must not target matrix column role Period"),
+        expect.stringContaining("expandCollapse requires a drilldown declaration")
+      ])
+    );
+  });
+
+  test("rejects expand/collapse when drilldown omits the expanded row role", () => {
+    const rejected = JSON.parse(JSON.stringify(capabilities));
+    rejected.expandCollapse = { roles: ["Cohort", "Period"] };
+    rejected.drilldown = { roles: ["Period"] };
+
+    expect(findDataRoleMappingProblems(rejected)).toContainEqual(
+      expect.stringContaining("must declare matrix row role Cohort in drilldown.roles")
     );
   });
 

@@ -14,6 +14,10 @@
   `Cohort`, `Period`, `Retained`, and `CohortSize` sample query, and the audit rejects a
   regression to iterated single-field measure selectors. Regression coverage proves both the
   accepted binding shape and the rejected legacy shape.
+- **Removed unsupported matrix expand/collapse metadata.** The flat matrix no longer
+  advertises `expandCollapse` for the `Cohort` row and `Period` column roles. Desktop
+  requires drill support for that capability and does not permit it on matrix columns;
+  the executable audit and regression suite reject either invalid shape.
 - **Advanced the corrected release to `1.0.3.0` (`package.json` `1.0.3`).** Partner Center
   already has `1.0.2.0` submitted and in progress, so this release uses a higher version and
   must not reuse that package or its sample PBIX.
@@ -40,7 +44,7 @@
 - Corrected the submission privacy URL to `https://atlynco.com/legal/privacy` in the
   generated release metadata, dossier, EULA, and tests.
 - The submission-ready `1.0.3.0` package is
-  `233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96` at 21,914 bytes.
+  `5485d10c4241689f8238889cda3eed646f1aa6e6b08828256b1ec8c8632499b4` at 21,851 bytes.
   It is deterministic across three consecutive local builds and contains the repaired
   capabilities and version `1.0.3.0`; the already-submitted `1.0.2.0` artifact is superseded.
 - The `1.0.3.0` sample PBIX is intentionally pending the shared Power BI Desktop slot. It must

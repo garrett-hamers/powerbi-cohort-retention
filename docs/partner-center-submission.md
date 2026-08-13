@@ -406,6 +406,12 @@ and the optional metric roles); the multi-field `Tooltip` role remains `for.in`.
 regression audit rejects a single-field measure represented by `for.in`, and the generated
 sample and standalone PBIVIZ are rebuilt from the same capabilities source.
 
+The flat matrix also no longer advertises `expandCollapse`. Microsoft requires drill support
+for that capability and does not permit it on matrix column roles, so exposing it for the
+`Cohort` rows and `Period` columns could prevent Desktop from initializing the visual. The
+certification audit and regression suite reject `expandCollapse` on this matrix or without a
+drilldown declaration.
+
 Soft policy **1180.2.3.1** recommends visible hints in the sample. The generated sample
 now shows a wrapped subtitle: *"Tip: Bind Cohort to rows and Period to relative integer
 columns. Hover a cell for denominator and observation details."* The visual's empty
@@ -418,8 +424,8 @@ state also gives actionable role-well guidance.
 | Visual version | `1.0.3.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.3.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96` |
-| Size | 21,914 bytes |
+| SHA-256 | `5485d10c4241689f8238889cda3eed646f1aa6e6b08828256b1ec8c8632499b4` |
+| Size | 21,851 bytes |
 | Packaged CSS | 5,167 bytes, inline as `content.css` |
 | Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
@@ -512,11 +518,11 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96` | 21,914 bytes |
+| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `5485d10c4241689f8238889cda3eed646f1aa6e6b08828256b1ec8c8632499b4` | 21,851 bytes |
 
 **Confirmed identical across three consecutive local builds**, so
-`233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96`
-at 21,914 bytes is the value to publish in the release manifest, under
+`5485d10c4241689f8238889cda3eed646f1aa6e6b08828256b1ec8c8632499b4`
+at 21,851 bytes is the value to publish in the release manifest, under
 `cohort-retention/1.0.3.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from
@@ -524,6 +530,8 @@ If the values ever diverge, take the authoritative hash and byte size from
 hash from one environment with a binary from another.
 
 **Do not publish any earlier hash.** Superseded, newest first:
+`233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96` (21,914 bytes — the
+previous `1.0.3.0` package before removing unsupported matrix expand/collapse metadata),
 `d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133` (21,909 bytes — the
 previous `1.0.3.0` package before the native matrix binding repair), `daf4032d4c5abbd49b7a684239dcf4826e817fe874352448d9bec73566e1f0dc` (21,908 bytes — the
 `1.0.2.0` package already submitted and in progress in Partner Center, superseded by `1.0.3.0`),

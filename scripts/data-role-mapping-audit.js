@@ -69,6 +69,36 @@ function findDataRoleMappingProblems(capabilities) {
       );
     }
 
+    const expandCollapse = capabilities.expandCollapse;
+    if (expandCollapse) {
+      const expandedRoles = new Set(
+        Array.isArray(expandCollapse.roles) ? expandCollapse.roles : []
+      );
+      const columnRole =
+        mapping.matrix?.columns?.for?.in ?? mapping.matrix?.columns?.bind?.to;
+      if (columnRole && expandedRoles.has(columnRole)) {
+        problems.push(
+          `dataViewMappings[${mappingIndex}] expandCollapse must not target matrix column role ${columnRole}`
+        );
+      }
+      const drilldownRoles = new Set(
+        Array.isArray(capabilities.drilldown?.roles) ? capabilities.drilldown.roles : []
+      );
+      if (drilldownRoles.size === 0) {
+        problems.push(
+          `dataViewMappings[${mappingIndex}] expandCollapse requires a drilldown declaration`
+        );
+      }
+      const rowRole =
+        mapping.matrix?.rows?.for?.in ?? mapping.matrix?.rows?.bind?.to;
+      if (rowRole && expandedRoles.has(rowRole) && !drilldownRoles.has(rowRole)) {
+        problems.push(
+          `dataViewMappings[${mappingIndex}] expandCollapse must declare matrix row role ` +
+            `${rowRole} in drilldown.roles`
+        );
+      }
+    }
+
     const singleFieldRoles = new Set(
       conditions.flatMap((condition) =>
         Object.entries(condition)
