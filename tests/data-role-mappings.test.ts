@@ -5,7 +5,7 @@ const {
 
 const capabilities = require("../capabilities.json");
 const mapping = capabilities.dataViewMappings[0];
-const roleNames = capabilities.dataRoles.map((role: { name: string }) => role.name);
+const roleNames: string[] = capabilities.dataRoles.map((role: { name: string }) => role.name);
 
 describe("incremental data role assignment", () => {
   test("accepts an empty visual and every role as the first field assignment", () => {
@@ -44,6 +44,28 @@ describe("incremental data role assignment", () => {
     expect(
       mappingAcceptsAssignments(mapping, ["Cohort", "Period", "Retained", "CohortSize"])
     ).toBe(true);
+  });
+
+  test("binds single-field matrix measures instead of iterating them", () => {
+    const selectors = mapping.matrix.values.select;
+    const boundedMeasureRoles = roleNames.filter(
+      (role) => capabilities.dataRoles.find((dataRole: { name: string }) => dataRole.name === role)?.kind === "Measure"
+    );
+
+    boundedMeasureRoles.forEach((role) => {
+      expect(selectors).toContainEqual({ bind: { to: role } });
+      expect(selectors).not.toContainEqual({ for: { in: role } });
+    });
+    expect(selectors).toContainEqual({ for: { in: "Tooltip" } });
+  });
+
+  test("reproduces and rejects iterated single-field matrix measures", () => {
+    const rejected = JSON.parse(JSON.stringify(capabilities));
+    rejected.dataViewMappings[0].matrix.values.select[0] = { for: { in: "Retained" } };
+
+    expect(findDataRoleMappingProblems(rejected)).toContainEqual(
+      expect.stringContaining("matrix.values selector for Retained must use bind.to")
+    );
   });
 
   test("rejects DataWindow as the matrix secondary reduction algorithm", () => {

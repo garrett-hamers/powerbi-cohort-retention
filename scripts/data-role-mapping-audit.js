@@ -68,6 +68,23 @@ function findDataRoleMappingProblems(capabilities) {
           "Power BI rejects DataWindow as the secondary reduction algorithm"
       );
     }
+
+    const singleFieldRoles = new Set(
+      conditions.flatMap((condition) =>
+        Object.entries(condition)
+          .filter(([, constraint]) => constraint.max === 1)
+          .map(([role]) => role)
+      )
+    );
+    for (const selector of mapping.matrix?.values?.select ?? []) {
+      const role = selector.for?.in;
+      if (role && singleFieldRoles.has(role)) {
+        problems.push(
+          `dataViewMappings[${mappingIndex}].matrix.values selector for ${role} must use bind.to ` +
+            "when the role is limited to one field"
+        );
+      }
+    }
   });
 
   return problems;

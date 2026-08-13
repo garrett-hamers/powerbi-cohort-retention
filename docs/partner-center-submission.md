@@ -399,6 +399,13 @@ column-side declaration with *"DataWindow can not be used as the DataReduction
 Secondary algorithm."* Rows keep the 500-item `window`; columns now use a 500-item
 `top` reduction. The same executable audit rejects any future secondary `window`.
 
+The next native validation loaded the custom visual host but discarded the persisted
+single-field measure projections, leaving only a generic `Values` well. The matrix mapping
+now uses `bind.to` for every measure role constrained to one field (`Retained`, `CohortSize`,
+and the optional metric roles); the multi-field `Tooltip` role remains `for.in`. The
+regression audit rejects a single-field measure represented by `for.in`, and the generated
+sample and standalone PBIVIZ are rebuilt from the same capabilities source.
+
 Soft policy **1180.2.3.1** recommends visible hints in the sample. The generated sample
 now shows a wrapped subtitle: *"Tip: Bind Cohort to rows and Period to relative integer
 columns. Hover a cell for denominator and observation details."* The visual's empty
@@ -411,8 +418,8 @@ state also gives actionable role-well guidance.
 | Visual version | `1.0.3.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.3.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133` |
-| Size | 21,909 bytes |
+| SHA-256 | `233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96` |
+| Size | 21,914 bytes |
 | Packaged CSS | 5,167 bytes, inline as `content.css` |
 | Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
@@ -449,8 +456,9 @@ comment calling it "the two files Power BI reads". Only the standalone `.pbiviz`
 
 That builder is now shared. `scripts/visual-package.js` is the single source of truth, used by
 `scripts/package.js` for the `.pbiviz` and by `scripts/generate-sample-report.js` for the
-embedded copy, so the two cannot drift again. The refactor was verified byte-preserving: the
-regenerated sample report is unchanged.
+embedded copy, so the two cannot drift again. The sample is regenerated from the current
+archive entries, and the audit gates byte equality between the standalone package and embedded
+copy.
 
 ### Verified against the official packager
 
@@ -504,11 +512,11 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133` | 21,909 bytes |
+| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96` | 21,914 bytes |
 
 **Confirmed identical across three consecutive local builds**, so
-`d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133`
-at 21,909 bytes is the value to publish in the release manifest, under
+`233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96`
+at 21,914 bytes is the value to publish in the release manifest, under
 `cohort-retention/1.0.3.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from
@@ -516,7 +524,8 @@ If the values ever diverge, take the authoritative hash and byte size from
 hash from one environment with a binary from another.
 
 **Do not publish any earlier hash.** Superseded, newest first:
-`daf4032d4c5abbd49b7a684239dcf4826e817fe874352448d9bec73566e1f0dc` (21,908 bytes — the
+`d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133` (21,909 bytes — the
+previous `1.0.3.0` package before the native matrix binding repair), `daf4032d4c5abbd49b7a684239dcf4826e817fe874352448d9bec73566e1f0dc` (21,908 bytes — the
 `1.0.2.0` package already submitted and in progress in Partner Center, superseded by `1.0.3.0`),
 `caad178bbd3c578d941e5031aeb53756847dbefc36b64d34ca3bc04dc0fb5130` (21,904 bytes — the
 first `1.0.2.0` role-condition repair, superseded by the live-validated matrix reduction fix),
@@ -546,8 +555,9 @@ the current packaged hash to be recorded in both files, so deleting a stale valu
 updating it does not read as a pass.
 
 The 300 x 300 logo, the screenshots, and the entire `samples/` sample report are
-Partner Center **listing** assets and are intentionally not packaged inputs. The packaged
-inputs — the files whose bytes feed the two archive entries — are unchanged:
+Partner Center **listing** assets and are intentionally not packaged inputs. The packaged input
+set remains explicit; `capabilities.json` is intentionally updated when the visual's binding
+contract changes:
 
 ```text
 assets/icon.png
