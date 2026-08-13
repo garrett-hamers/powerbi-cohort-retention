@@ -44,7 +44,7 @@ function readText(...segments) {
  * valid JavaScript identifier and the `var` declaration position would be legal here as well.
  */
 function pluginRegistration(pbiviz) {
-  const { guid, displayName, visualClassName, version } = pbiviz.visual;
+ const { guid, displayName, visualClassName } = pbiviz.visual;
   return `
 /* Power BI visual plugin registration for ${displayName}. */
 (function () {
@@ -52,13 +52,13 @@ function pluginRegistration(pbiviz) {
     var powerbiKey = "powerbi";
     var powerbiGlobal = typeof window !== "undefined" ? window[powerbiKey] : undefined;
     if (!powerbiGlobal) return;
-    powerbiGlobal.visuals = powerbiGlobal.visuals || {};
-    powerbiGlobal.visuals.plugins = powerbiGlobal.visuals.plugins || {};
-    powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}] = {
+
+    AtlynCohortRetention = AtlynCohortRetention || {};
+
+    var plugin = {
         name: ${JSON.stringify(guid)},
         displayName: ${JSON.stringify(displayName)},
         class: ${JSON.stringify(visualClassName)},
-        version: ${JSON.stringify(version)},
         apiVersion: ${JSON.stringify(pbiviz.apiVersion)},
         create: function (options) {
             if (typeof AtlynCohortRetention !== "undefined" && AtlynCohortRetention.${visualClassName}) {
@@ -66,8 +66,20 @@ function pluginRegistration(pbiviz) {
             }
             throw "Visual instance not found";
         },
+        createModalDialog: function () {
+            return null;
+        },
         custom: true
     };
+
+    AtlynCohortRetention.default = plugin;
+    if (typeof window !== "undefined") {
+        window[${JSON.stringify(guid)}] = AtlynCohortRetention;
+    }
+
+    powerbiGlobal.visuals = powerbiGlobal.visuals || {};
+    powerbiGlobal.visuals.plugins = powerbiGlobal.visuals.plugins || {};
+    powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}] = plugin;
 })();
 `;
 }

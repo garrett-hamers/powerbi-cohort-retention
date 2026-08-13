@@ -44,7 +44,7 @@
 - Corrected the submission privacy URL to `https://atlynco.com/legal/privacy` in the
   generated release metadata, dossier, EULA, and tests.
 - The submission-ready `1.0.3.0` package is
-  `5485d10c4241689f8238889cda3eed646f1aa6e6b08828256b1ec8c8632499b4` at 21,851 bytes.
+  `f55ddede50b575a1dc072a6751a3416f7621e2a48cbf1acc0ba608b9810da593` at 21,904 bytes.
   It is deterministic across three consecutive local builds and contains the repaired
   capabilities and version `1.0.3.0`; the already-submitted `1.0.2.0` artifact is superseded.
 - The `1.0.3.0` sample PBIX is intentionally pending the shared Power BI Desktop slot. It must

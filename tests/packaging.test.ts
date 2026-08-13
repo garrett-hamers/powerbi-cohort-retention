@@ -87,6 +87,33 @@ describe("packaged .pbiviz is loadable by a host", () => {
     expect(Buffer.byteLength(definition.content.css, "utf8")).toBeGreaterThan(1000);
   });
 
+  maybe("packages the standard GUID-global plugin contract expected by Desktop", async () => {
+    const { definition } = await loadPackage();
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
+    const script = definition.content.js;
+
+    expect(script).toContain(`window[${JSON.stringify(guid)}] = AtlynCohortRetention`);
+    expect(script).toContain("AtlynCohortRetention.default = plugin");
+    expect(script).toContain("createModalDialog");
+    expect(script).not.toContain("version: ");
+    expect(script).toContain(`name: ${JSON.stringify(guid)}`);
+    expect(script).toContain(`displayName: ${JSON.stringify(pbiviz.visual.displayName)}`);
+    expect(script).toContain(`class: ${JSON.stringify(pbiviz.visual.visualClassName)}`);
+    expect(script).toContain(`apiVersion: ${JSON.stringify(pbiviz.apiVersion)}`);
+
+    (window as any).powerbi = { visuals: { plugins: {} } };
+    new Function(script)();
+    const plugin = (window as any).powerbi.visuals.plugins[guid];
+    expect(plugin).toBeDefined();
+    expect(plugin.name).toBe(guid);
+    expect(plugin.displayName).toBe(pbiviz.visual.displayName);
+    expect(plugin.class).toBe(pbiviz.visual.visualClassName);
+    expect(plugin.apiVersion).toBe(pbiviz.apiVersion);
+    expect(plugin.createModalDialog).toEqual(expect.any(Function));
+    expect(plugin.version).toBeUndefined();
+    expect((window as any)[guid].default).toBe(plugin);
+  });
+
   maybe("registers its plugin and renders a grid from the packaged bytes", async () => {
     const { definition } = await loadPackage();
 

@@ -67,6 +67,8 @@ describe("the stylesheet the host actually receives", () => {
     expect(source).not.toMatch(/^\s*\/\//m);
     expect(source).not.toMatch(/^\s*@[\w-]+\s*:/m);
     expect(source).not.toMatch(/\.[\w-]+\(\)\s*;/);
+    expect(source).not.toMatch(/<caption>/i);
+    expect(source).toContain("caption element");
     // It still has to be valid Less input, because the `style` field advertises it as such.
     const compiled = (await less.render(source)).css;
     expect(compiled).toContain(".atlyn-cohort-visual");
