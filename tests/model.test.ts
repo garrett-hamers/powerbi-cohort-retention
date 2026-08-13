@@ -407,19 +407,22 @@ describe("cohort matrix model", () => {
   });
 
   test("reads flattened multi-source values even when a direct key exists", () => {
-    const values = {
+    const objectValues = {
       0: { value: 100 },
       1: { value: 1000, valueSourceIndex: 1 },
       2: { value: 80 },
-      3: { value: 1000, valueSourceIndex: 1 },
+      3: { value: 900, valueSourceIndex: 1 },
       4: { value: 60 },
-      5: { value: 1000, valueSourceIndex: 1 }
+      5: { value: 800, valueSourceIndex: 1 }
     };
+    const arrayValues = [100, 1000, 80, 900, 60, 800];
 
-    expect(readMatrixValue(values, 0, 0, 2)).toMatchObject({ present: true, value: 100 });
-    expect(readMatrixValue(values, 0, 1, 2)).toMatchObject({ present: true, value: 1000 });
-    expect(readMatrixValue(values, 1, 0, 2)).toMatchObject({ present: true, value: 80 });
-    expect(readMatrixValue(values, 1, 1, 2)).toMatchObject({ present: true, value: 1000 });
+    expect(readMatrixValue(objectValues, 0, 0, 2)).toMatchObject({ present: true, value: 100 });
+    expect(readMatrixValue(objectValues, 0, 1, 2)).toMatchObject({ present: true, value: 1000 });
+    expect(readMatrixValue(objectValues, 1, 0, 2)).toMatchObject({ present: true, value: 80 });
+    expect(readMatrixValue(objectValues, 1, 1, 2)).toMatchObject({ present: true, value: 900 });
+    expect(readMatrixValue(arrayValues, 0, 1, 2)).toMatchObject({ present: true, value: 1000 });
+    expect(readMatrixValue(arrayValues, 1, 0, 2)).toMatchObject({ present: true, value: 80 });
   });
 
   test("prefers the direct nested period object before the flattened linear key", () => {
@@ -430,6 +433,67 @@ describe("cohort matrix model", () => {
 
     expect(readMatrixValue(values, 0, 1, 2)).toMatchObject({ present: true, value: 100 });
     expect(readMatrixValue(values, 1, 0, 2)).toMatchObject({ present: true, value: 10 });
+  });
+
+  test("sorts implicit Period parents by semantic value even when source order is out of order", () => {
+    const columns = [
+      { value: 3, level: 0, levelValues: [{ value: 3, levelSourceIndex: 0 }], children: [{ level: 1 }, { level: 1, levelSourceIndex: 1 }] },
+      { value: 0, level: 0, levelValues: [{ value: 0, levelSourceIndex: 0 }], children: [{ level: 1 }, { level: 1, levelSourceIndex: 1 }] },
+      { value: 1, level: 0, levelValues: [{ value: 1, levelSourceIndex: 0 }], children: [{ level: 1 }, { level: 1, levelSourceIndex: 1 }] },
+      { value: 2, level: 0, levelValues: [{ value: 2, levelSourceIndex: 0 }], children: [{ level: 1 }, { level: 1, levelSourceIndex: 1 }] }
+    ];
+    const rowValues = {
+      0: { value: 500 },
+      1: { value: 1000, valueSourceIndex: 1 },
+      2: { value: 100 },
+      3: { value: 1000, valueSourceIndex: 1 },
+      4: { value: 80 },
+      5: { value: 1000, valueSourceIndex: 1 },
+      6: { value: 60 },
+      7: { value: 1000, valueSourceIndex: 1 }
+    };
+
+    const model = buildCohortModel(
+      matrix(
+        [{ value: "2024-01", identity: { key: "cohort-a" }, values: rowValues }],
+        columns,
+        [source("Retained", { Retained: true }), source("CohortSize", { CohortSize: true })]
+      )
+    );
+
+    expect(model.columns.map((column) => column.periodIndex)).toEqual([0, 1, 2, 3]);
+    expect(model.columns.map((column) => column.sourcePosition)).toEqual([1, 2, 3, 0]);
+    expect(model.rows[0].cells.map((cell) => cell.value)).toEqual([0.1, 0.08, 0.06, 0.5]);
+  });
+
+  test("preserves genuine two-source period hierarchies instead of collapsing them", () => {
+    const model = buildCohortModel(
+      matrix(
+        [
+          {
+            value: "A",
+            values: {
+              0: { values: { 0: 10, 1: 20 } },
+              1: { values: { 0: 15, 1: 20 } }
+            }
+          }
+        ],
+        [
+          {
+            value: "Q1",
+            level: 0,
+            children: [
+              { value: 0, level: 1, levelValues: [{ value: "Q1" }, { value: 0 }], identity: { key: "period-0" } },
+              { value: 1, level: 1, levelValues: [{ value: "Q1" }, { value: 1 }], identity: { key: "period-1" } }
+            ]
+          }
+        ],
+        [source("Retained", { Retained: true }), source("CohortSize", { CohortSize: true })]
+      )
+    );
+
+    expect(model.columns.map((column) => column.periodIndex)).toEqual([0, 1]);
+    expect(model.rows[0].cells.map((cell) => cell.value)).toEqual([0.5, 0.75]);
   });
 
   test("derives semantic period columns from Desktop's implicit measure-child period nodes", () => {

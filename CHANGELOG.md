@@ -44,7 +44,7 @@
 - Corrected the submission privacy URL to `https://atlynco.com/legal/privacy` in the
   generated release metadata, dossier, EULA, and tests.
 - The submission-ready `1.0.3.0` package is
-  `54b6f0ed7ca9e725b0d9d8a36530b8efb6e1e49f4170a06c542e5ee3abbdb602` at 22,311 bytes.
+  `e582bc85aaa006343fde4b251f79ca62c2cc8bbdc2fa86d0a12d34a58c0e4aa7` at 22,187 bytes.
   It is deterministic across three consecutive local builds and contains the repaired
   native matrix parser, capabilities, and version `1.0.3.0`; the already-submitted
   `1.0.2.0` artifact is superseded.

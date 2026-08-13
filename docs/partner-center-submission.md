@@ -424,8 +424,8 @@ state also gives actionable role-well guidance.
 | Visual version | `1.0.3.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
 | Storefront Blob path | `cohort-retention/1.0.3.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `54b6f0ed7ca9e725b0d9d8a36530b8efb6e1e49f4170a06c542e5ee3abbdb602` |
-| Size | 22,311 bytes |
+| SHA-256 | `e582bc85aaa006343fde4b251f79ca62c2cc8bbdc2fa86d0a12d34a58c0e4aa7` |
+| Size | 22,187 bytes |
 | Packaged CSS | 5,167 bytes, inline as `content.css` |
 | Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
@@ -518,11 +518,11 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `54b6f0ed7ca9e725b0d9d8a36530b8efb6e1e49f4170a06c542e5ee3abbdb602` | 22,311 bytes |
+| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `e582bc85aaa006343fde4b251f79ca62c2cc8bbdc2fa86d0a12d34a58c0e4aa7` | 22,187 bytes |
 
 **Confirmed identical across three consecutive local builds**, so
-`54b6f0ed7ca9e725b0d9d8a36530b8efb6e1e49f4170a06c542e5ee3abbdb602`
-at 22,311 bytes is the value to publish in the release manifest, under
+`e582bc85aaa006343fde4b251f79ca62c2cc8bbdc2fa86d0a12d34a58c0e4aa7`
+at 22,187 bytes is the value to publish in the release manifest, under
 `cohort-retention/1.0.3.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from

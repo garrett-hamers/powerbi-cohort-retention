@@ -389,11 +389,16 @@ export function readMatrixValue(
       if (directResult) return directResult;
       return { present: false, value: null };
     }
-    const linear = values[columnPosition * Math.max(1, sourceCount) + measureIndex];
-    if (linear !== undefined) {
-      const linearResult = readValueCandidate(linear, measureIndex, true);
-      if (linearResult) return linearResult;
+
+    if (sourceCount > 1) {
+      const linearKey = columnPosition * Math.max(1, sourceCount) + measureIndex;
+      const linear = values[linearKey];
+      if (linear !== undefined) {
+        const linearResult = readValueCandidate(linear, measureIndex, true);
+        if (linearResult) return linearResult;
+      }
     }
+
     if (direct !== undefined && !isNestedDirectValue(direct)) {
       const directFallback = readValueCandidate(direct, measureIndex, sourceCount <= 1 || measureIndex === 0);
       if (directFallback) return directFallback;
@@ -422,27 +427,6 @@ export function readMatrixValue(
     if (direct !== undefined && !isNestedDirectValue(direct)) {
       const directFallback = readValueCandidate(direct, measureIndex, sourceCount <= 1 || measureIndex === 0);
       if (directFallback) return directFallback;
-    }
-
-    if (columnPosition === 0) {
-      const measure = values[String(measureIndex)];
-      if (measure !== undefined) {
-        const measureResult = readValueCandidate(measure, measureIndex, sourceCount <= 1 || measureIndex === 0);
-        if (measureResult) return measureResult;
-      }
-    }
-
-    for (const [key, candidate] of Object.entries(values)) {
-      const numericKey = Number(key);
-      if (!Number.isInteger(numericKey)) continue;
-      if (
-        numericKey !== columnPosition &&
-        numericKey !== columnPosition * Math.max(1, sourceCount) + measureIndex
-      ) {
-        continue;
-      }
-      const nestedResult = readValueCandidate(candidate, measureIndex, sourceCount <= 1 || measureIndex === 0);
-      if (nestedResult) return nestedResult;
     }
   }
 
@@ -1015,6 +999,7 @@ function isImplicitPeriodColumn(node: MatrixNodeRef, valueSources: powerbi.DataV
     if (parsePeriodIndex(child.node) !== null) return false;
     if (child.node.identity !== undefined) return false;
     if (child.node.value !== undefined && child.node.value !== null && child.node.value !== "") return false;
+    if (child.node.name !== undefined && child.node.name !== null && child.node.name !== "") return false;
     const sourceIndex = toFiniteNumber(child.node.levelSourceIndex);
     if (index === 0) return sourceIndex === null || sourceIndex === 0;
     return sourceIndex === index;
