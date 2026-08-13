@@ -507,13 +507,18 @@ final-render evidence is recorded in the release handoff before submission.
 The owner-controlled native report handoff is kept as a separate artifact from the packaged
 `.pbiviz` and is not rebuilt by `npm run package`.
 
+> Critical correction: the earlier `E6914547...` / 43,740-byte handoff was stale and invalid; it
+> rendered a blank custom frame and is not to be distributed. The canonical final handoff is the
+> exact coordinator rebuild from the validated `V:\cohort\samples` mirror, refreshed/rendered,
+> saved as Public, closed, and reopened without refresh. This artifact is the one to upload.
+
 | Field | Value |
 | --- | --- |
 | Path | `dist/release/AtlynCohortRetention.pbix` |
-| SHA-256 | `A6ED6EB1F49DB4CF65DA672C7DC5BF229BD055997F14A0869D101465285B772A` |
-| Size | 43,056 bytes |
-| Validation status | Refresh, Save As, close/reopen, and final-render checks completed in Desktop; final payload shows 16 cohorts x 12 periods, latest observed period 11, and 2024-01/Period 1 = 61.8% |
-| Evidence | `C:\Users\ghamers\.copilot\chats\17d9edc4-eb66-4a62-b840-b001d87c9983\desktop-validation\cohort\evidence\native-run-pre-save` and `...\native-run-final` |
+| SHA-256 | `4A2792753859C166119178A2508D09B5A6DC256D2AC95B244EDF1696B7F08587` |
+| Size | 43,062 bytes |
+| Validation status | Public save, close/reopen, no refresh prompt, 16 cohorts x 12 periods, latest observed period 11, and 2024-01 / Period 1 = 61.8% |
+| Evidence | `C:\Users\ghamers\.copilot\chats\17d9edc4-eb66-4a62-b840-b001d87c9983\desktop-validation\cohort\evidence\final-rebuild-pre-save` and `...\final-rebuild-reopen` |
 
 This is the exact binary that the owner should hand to Partner Center after the repo's local
 packing and certification gates have passed; it is not a replacement for the reproducible

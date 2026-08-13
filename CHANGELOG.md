@@ -51,11 +51,12 @@
 - The `1.0.3.0` sample PBIX is intentionally pending the shared Power BI Desktop slot. It must
   be refreshed, rendered, saved under `dist/release/AtlynCohortRetention.pbix`, closed, reopened,
   and final-rendered before its hash and Desktop evidence are recorded.
-- **Integrated the native handoff PBIX artifact.** The final binary at
-  `dist/release/AtlynCohortRetention.pbix` is `A6ED6EB1F49DB4CF65DA672C7DC5BF229BD055997F14A0869D101465285B772A`
-  at 43,056 bytes, with the desktop validation evidence captured under the native-run pre-save and
-  final folders in the coordinator's Desktop-validation store. It is the exact binary for the final
-  report handoff, separate from the package-bytes audit for `dist/atlyn-cohort-retention.pbiviz`.
+- **Integrated the corrected native handoff PBIX artifact.** The canonical final binary at
+  `dist/release/AtlynCohortRetention.pbix` is `4A2792753859C166119178A2508D09B5A6DC256D2AC95B244EDF1696B7F08587`
+  at 43,062 bytes, rebuilt from the validated `V:\cohort\samples` mirror and revalidated after a
+  Public save, close/reopen, and final-render check. The stale `E6914547...` / 43,740-byte copy is
+  explicitly rejected and not to be distributed. This exact binary is the final report handoff,
+  separate from the package-bytes audit for `dist/atlyn-cohort-retention.pbiviz`.
 
 - **Closed the recorded-hash gap.** The packaged `.pbiviz` SHA-256 and byte size, and the
   icon, logo, and screenshot hashes, are quoted in `docs/partner-center-submission.md` and
