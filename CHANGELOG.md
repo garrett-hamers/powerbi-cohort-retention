@@ -12,7 +12,8 @@
   `bind.to` selectors in the matrix mapping, while the multi-field Tooltip role remains
   iterative. This keeps Desktop's Build visual pane aligned with the persisted
   `Cohort`, `Period`, `Retained`, and `CohortSize` sample query, and the audit rejects a
-  regression to iterated single-field measure selectors.
+  regression to iterated single-field measure selectors. Regression coverage proves both the
+  accepted binding shape and the rejected legacy shape.
 - **Advanced the corrected release to `1.0.3.0` (`package.json` `1.0.3`).** Partner Center
   already has `1.0.2.0` submitted and in progress, so this release uses a higher version and
   must not reuse that package or its sample PBIX.
