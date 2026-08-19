@@ -6,6 +6,7 @@ const less = require("less");
 const { getSourceManifest } = require("./package-manifest");
 const { resourceEntryName } = require("./visual-package");
 const { findRecordedValueDrift, readSupersededHashes } = require("./doc-hash-gate");
+const { findDataRoleMappingProblems } = require("./data-role-mapping-audit");
 const { packagedCssMatchesSource } = require("./package-freshness");
 
 const root = path.resolve(__dirname, "..");
@@ -13,6 +14,7 @@ const pbiviz = readJson("pbiviz.json");
 const capabilities = readJson("capabilities.json");
 const packageJson = readJson("package.json");
 const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), "utf8");
+const visualPackageScript = fs.readFileSync(path.join(root, "scripts", "visual-package.js"), "utf8");
 const metadataPath = path.join(root, "dist", "package-metadata.json");
 const publicationMetadataPath = path.join(root, "dist", "publication-readiness.json");
 const packagePath = path.join(root, "dist", "atlyn-cohort-retention.pbiviz");
@@ -139,14 +141,15 @@ assert(
   "the package script must build the official two-file .pbiviz layout"
 );
 assert(
-  packageScript.includes('date: new Date("2000-01-01T00:00:00.000Z")'),
+  visualPackageScript.includes("buildVisualArchive") &&
+    visualPackageScript.includes('date: new Date("2000-01-01T00:00:00.000Z")'),
   "package entry timestamps are not pinned, so the artifact would not be reproducible"
 );
 
 const mapping = capabilities.dataViewMappings?.[0]?.matrix;
 assert(mapping?.rows?.dataReductionAlgorithm?.window?.count === 500, "row reduction must be 500");
-assert(mapping?.columns?.dataReductionAlgorithm?.window?.count === 500, "column reduction must be 500");
-assert(capabilities.expandCollapse?.roles?.join(",") === "Cohort,Period", "expand/collapse roles changed");
+assert(mapping?.columns?.dataReductionAlgorithm?.top?.count === 500, "column reduction must be 500");
+assert(!("expandCollapse" in capabilities), "expand/collapse must remain absent for the flat matrix");
 assert(capabilities.subtotals?.matrix?.rowSubtotals?.defaultValue === true, "row subtotals must be enabled");
 assert(capabilities.subtotals?.matrix?.columnSubtotals?.defaultValue === true, "column subtotals must be enabled");
 assert(
@@ -154,7 +157,12 @@ assert(
     JSON.stringify([{ role: "Period", direction: 1 }]),
   "Period sorting is not explicit"
 );
-assert(!("drill" in capabilities), "drill declarations must remain absent");
+assert(!("drilldown" in capabilities), "drilldown declarations must remain absent");
+const mappingProblems = findDataRoleMappingProblems(capabilities);
+assert(
+  mappingProblems.length === 0,
+  `the data role mappings block incremental field assignment:\n  - ${mappingProblems.join("\n  - ")}`
+);
 
 const sourceFiles = fs
   .readdirSync(path.join(root, "src"))
@@ -428,8 +436,43 @@ assert(
   sampleReportJson.publicCustomVisuals === undefined,
   "the sample report must embed the visual, not resolve it from the AppSource store"
 );
-const samplePackage = sampleReportJson.resourcePackages?.find((entry) => entry.type === "CustomVisual");
-assert(samplePackage?.name === expectedGuid, "the sample report does not embed this visual");
+assert(sampleReportJson.customVisuals === undefined, "the sample report must use the proven PBIP resource shape");
+const samplePackage = sampleReportJson.resourcePackages?.find(
+  (entry) => entry.name === expectedGuid && entry.type === "CustomVisual"
+);
+assert(samplePackage, "the sample report does not register its visual as a CustomVisual resource");
+assert(
+  JSON.stringify(samplePackage.items) ===
+    JSON.stringify([
+      {
+        name: `${expectedGuid}.pbiviz.json`,
+        path: `${expectedGuid}.pbiviz.json`,
+        type: "CustomVisualMetadata"
+      }
+    ]),
+  "the sample report's CustomVisual resource entry is not the proven PBIP shape"
+);
+const sampleDescriptorPath = path.join(
+  sampleReport,
+  "CustomVisuals",
+  expectedGuid,
+  "package.json"
+);
+const sampleDefinitionPath = path.join(
+  sampleReport,
+  "CustomVisuals",
+  expectedGuid,
+  "resources",
+  `${expectedGuid}.pbiviz.json`
+);
+assert(
+  fs.existsSync(sampleDescriptorPath) && fs.existsSync(sampleDefinitionPath),
+  "the sample report is missing the unpacked CustomVisual package entries"
+);
+assert(
+  !fs.existsSync(path.join(sampleReport, "StaticResources")),
+  "the sample report must not carry the unsupported RegisteredResources archive layout"
+);
 
 const samplePages = path.join(sampleReport, "definition", "pages");
 const samplePageDirectories = fs
@@ -445,6 +488,15 @@ const sampleVisual = JSON.parse(
   fs.readFileSync(path.join(sampleVisuals, sampleVisualDirectories[0].name, "visual.json"), "utf8")
 );
 assert(sampleVisual.visual?.visualType === expectedGuid, "the sample visual does not bind this GUID");
+const sampleHint =
+  sampleVisual.visual?.visualContainerObjects?.subTitle?.[0]?.properties?.text?.expr?.Literal?.Value;
+assert(
+  typeof sampleHint === "string" &&
+    sampleHint.includes("Tip:") &&
+    sampleHint.includes("Cohort") &&
+    sampleHint.includes("Period"),
+  "the sample report must show an in-report usage tip that names the Cohort and Period roles"
+);
 
 const roleNames = new Set(capabilities.dataRoles.map((role) => role.name));
 const boundRoles = Object.keys(sampleVisual.visual.query?.queryState ?? {});
@@ -499,36 +551,6 @@ for (const file of sampleTmdlFiles) {
   );
 }
 
-const sampleVisualBundle = JSON.parse(
-  fs.readFileSync(
-    path.join(sampleReport, "CustomVisuals", expectedGuid, "resources", `${expectedGuid}.pbiviz.json`),
-    "utf8"
-  )
-);
-assert(sampleVisualBundle.visual?.guid === expectedGuid, "the embedded visual GUID does not match source");
-assert(
-  sampleVisualBundle.visual?.version === pbiviz.visual.version,
-  "the embedded visual version is stale; re-run npm run sample:report"
-);
-assert(
-  JSON.stringify(sampleVisualBundle.capabilities) === JSON.stringify(capabilities),
-  "the embedded visual capabilities are stale; re-run npm run sample:report"
-);
-assert(
-  sampleVisualBundle.content?.js?.includes(`powerbiGlobal.visuals.plugins[${JSON.stringify(expectedGuid)}]`),
-  "the embedded visual bundle does not register its plugin"
-);
-// Power BI injects `content.css` as the visual's stylesheet. This project packages by hand
-// instead of using powerbi-visuals-webpack-plugin, which derives the CSS from a webpack-emitted
-// asset, so nothing here would notice if the stylesheet silently stopped being carried.
-assert(
-  typeof sampleVisualBundle.content?.css === "string" && sampleVisualBundle.content.css.trim() !== "",
-  "the embedded visual bundle ships no CSS; the visual would render completely unstyled"
-);
-assert(
-  sampleVisualBundle.content.css === stylesheetSource,
-  "the embedded visual CSS is stale; re-run npm run sample:report"
-);
 // The committed submission screenshots are only truthful if the harness renders with the real
 // stylesheet. Losing this link would silently produce unstyled captures that still pass the
 // dimension and byte-size gates.
@@ -556,9 +578,9 @@ assert(
 
 /**
  * The GUID cascades through pbiviz.json, the packaged manifest and resource entry name, the
- * plugin registration, the sample report's `CustomVisuals/<GUID>/` tree, `resourcePackages`, and
- * `visualType`. A single missed occurrence would leave the sample report binding a visual the
- * package no longer registers, which nothing else here would catch. The previous GUID was the
+ * plugin registration, the sample report's CustomVisuals resource, `resourcePackages`, and
+ * `visualType`. A single missed occurrence would leave the sample report
+ * binding a visual the package no longer registers, which nothing else here would catch. The previous GUID was the
  * hyphenated UUID this one preserves, so it must not appear anywhere except the two documents
  * that record the change deliberately.
  */
@@ -623,6 +645,23 @@ JSZip.loadAsync(fs.readFileSync(packagePath))
    assert(
      JSON.stringify(fileEntries) === JSON.stringify(metadata.packageFiles.slice().sort()),
      "package file entries do not match package metadata"
+   );
+
+   const archiveDescriptorEntry = archive.file("package.json");
+   const archiveDefinitionEntry = archive.file(resourceEntryName(expectedGuid));
+   assert(
+     archiveDescriptorEntry && archiveDefinitionEntry,
+     "the PBIVIZ archive is missing an entry required by the sample"
+   );
+   const archiveDescriptor = await archiveDescriptorEntry.async("nodebuffer");
+   const archiveDefinition = await archiveDefinitionEntry.async("nodebuffer");
+   assert(
+     fs.readFileSync(sampleDescriptorPath).equals(archiveDescriptor),
+     "the sample package.json is not byte-identical to the packaged PBIVIZ archive entry"
+   );
+   assert(
+     fs.readFileSync(sampleDefinitionPath).equals(archiveDefinition),
+     "the sample visual resource is not byte-identical to the packaged PBIVIZ archive entry"
    );
 
    const cssBytes = await assertPackagedVisual(archive);

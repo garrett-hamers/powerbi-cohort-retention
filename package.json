@@ -1,6 +1,6 @@
 {
   "name": "atlyn-cohort-retention",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Atlyn Cohort Retention Power BI custom visual",
   "private": true,
   "scripts": {
@@ -48,6 +48,6 @@
   "overrides": {
     "uuid": "11.1.1",
     "hono": "4.12.34",
-    "nanoid": "3.3.17"
+    "nanoid": "3.3.18"
   }
 }

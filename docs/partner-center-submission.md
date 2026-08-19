@@ -23,7 +23,7 @@ and
 | Visual name | `visual.name` | `atlynCohortRetention` |
 | Display name | `visual.displayName` | `Atlyn Cohort Retention` |
 | Visual GUID | `visual.guid` | `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11` |
-| Version (four parts) | `visual.version` | `1.0.1.0` |
+| Version (four parts) | `visual.version` | `1.0.3.0` |
 | API version | `apiVersion` | `5.11.0` |
 | Description | `visual.description` | See [section 2](#2-listing-description). 641 characters. |
 | Support URL | `visual.supportUrl` | `https://atlyn.io/contact` |
@@ -125,7 +125,8 @@ No screenshot is mocked up, retouched, or drawn by hand.
 
 ## 7. Privacy policy URL
 
-`https://atlyn.io/legal/privacy` — verified live (HTTP 200) and starts with `https://`.
+`https://atlynco.com/legal/privacy` — owner-confirmed Partner Center privacy URL; starts with
+`https://`.
 
 Terms of service: `https://atlyn.io/legal/terms`.
 
@@ -170,12 +171,12 @@ kind — a source gate in `npm run package` enforces that.
 | Data | DAX calculated table, 82 `DATATABLE(...)` rows, 16 monthly cohorts x 12 relative periods |
 | Data sources | **None at all** |
 | External connections | **None** |
-| Visual delivery | Embedded via `resourcePackages` + `Report/CustomVisuals/<GUID>/`, not `publicCustomVisuals` |
+| Visual delivery | Exact `.pbiviz` archive entries extracted under `Report/CustomVisuals/<GUID>/` and registered as a `CustomVisual` resource package, not `publicCustomVisuals` |
 | Regenerate | `npm run build && npm run sample:report` |
 
 See `samples/README.md` for the full layout and field bindings.
 
-### Why this is a PBIP and not a `.pbix`
+### Why the source is PBIP and the submitted sample is `.pbix`
 
 Two independent blockers, both verified:
 
@@ -189,6 +190,8 @@ Two independent blockers, both verified:
    repository depends on pbi-tools.
 
 PBIP is plain text, publicly documented, and Power BI Desktop opens it directly.
+The repository therefore keeps the reproducible source as PBIP, while the Partner
+Center handoff includes a refreshed `.pbix` produced from that source in Desktop.
 
 ### Offline guarantee: a DAX calculated table, not a query
 
@@ -268,7 +271,9 @@ PBIR and TMDL are documented by Microsoft as **preview** features. Opening and
 re-saving the project requires the matching preview options in Power BI Desktop
 under **File > Options and settings > Options > Preview features**.
 
-### Required one-time manual step
+### PBIX regeneration procedure
+
+Use this procedure whenever the PBIP source or embedded visual changes:
 
 1. Open `samples/AtlynSample.pbip` in Power BI Desktop.
 2. **Run Home → Refresh → Schema and data before saving. This step is required, not
@@ -286,10 +291,10 @@ under **File > Options and settings > Options > Preview features**.
    an empty grid. This is the check that catches a missed step 2.
 6. Upload that `.pbix` to Partner Center as the sample report.
 
-> **This project has not been opened in Power BI Desktop from this repository.**
-> Every automated assertion is structural, plus a functional JSDOM check of the
-> embedded bundle. Steps 2, 3, and 5 above are the real validation gate, and they
-> are owner-controlled steps.
+> The earlier `1.0.2.0` repair completed this procedure in Power BI Desktop
+> 2.156.951.0, but Partner Center already has that version in progress. The
+> `1.0.3.0` PBIX must be regenerated from this source and its exact reopen
+> evidence recorded before handoff; do not reuse the earlier binary.
 
 ### Offline guarantee, enforced
 
@@ -354,15 +359,73 @@ registers under the new GUID, and instantiates it through `plugin.create()`.
 GUID during the one-time `.pbix` conversion step. That check is unchanged in
 kind — it is a normal smoke test, not a format risk.
 
+## 8c. Microsoft certification repair
+
+Microsoft offer `c4440474-3424-4ad9-bf15-9b96c3ddd1f8` failed hard policy
+**1180.2.12**: fields could not be dropped into the designated role wells and the
+visual never loaded. The supplied Microsoft reproduction video shows that host-level
+failure before the visual runtime receives usable data.
+
+The root cause was the only condition in `capabilities.json`:
+
+```json
+{
+  "Cohort": { "min": 1, "max": 1 },
+  "Period": { "min": 1, "max": 1 }
+}
+```
+
+Conditions gate whether Power BI accepts the current field assignment. Microsoft
+documents that a condition may have **only one** role with `min >= 1`. Requiring both
+roles made every first assignment invalid: assigning `Cohort` first still lacked
+`Period`, and assigning `Period` first still lacked `Cohort`. The runtime could never
+repair this because Power BI rejected the assignment before producing its data view.
+
+The repaired condition keeps every role's existing maximum but removes both minima.
+That makes the empty visual and every designated role valid as a first assignment,
+while the runtime continues to explain which fields the chosen metric mode needs.
+`scripts/data-role-mapping-audit.js` is called by the certification audit and rejects:
+
+- any condition requiring multiple roles simultaneously;
+- a mapping that rejects the empty assignment; or
+- a designated role that cannot be the first field assignment.
+
+The regression suite also reconstructs the rejected condition and proves the audit
+fails on the `Cohort` and `Period` first-assignment paths.
+
+Live Power BI Desktop validation then exposed a second capabilities defect in the
+generated sample: both matrix axes declared `window` reduction. Desktop rejected the
+column-side declaration with *"DataWindow can not be used as the DataReduction
+Secondary algorithm."* Rows keep the 500-item `window`; columns now use a 500-item
+`top` reduction. The same executable audit rejects any future secondary `window`.
+
+The next native validation loaded the custom visual host but discarded the persisted
+single-field measure projections, leaving only a generic `Values` well. The matrix mapping
+now uses `bind.to` for every measure role constrained to one field (`Retained`, `CohortSize`,
+and the optional metric roles); the multi-field `Tooltip` role remains `for.in`. The
+regression audit rejects a single-field measure represented by `for.in`, and the generated
+sample and standalone PBIVIZ are rebuilt from the same capabilities source.
+
+The flat matrix also no longer advertises `expandCollapse`. Microsoft requires drill support
+for that capability and does not permit it on matrix column roles, so exposing it for the
+`Cohort` rows and `Period` columns could prevent Desktop from initializing the visual. The
+certification audit and regression suite reject `expandCollapse` on this matrix or without a
+drilldown declaration.
+
+Soft policy **1180.2.3.1** recommends visible hints in the sample. The generated sample
+now shows a wrapped subtitle: *"Tip: Bind Cohort to rows and Period to relative integer
+columns. Hover a cell for denominator and observation details."* The visual's empty
+state also gives actionable role-well guidance.
+
 ## 9. Packaged artifact
 
 | Field | Value |
 | --- | --- |
-| Visual version | `1.0.1.0` |
+| Visual version | `1.0.3.0` |
 | Package filename | `atlyn-cohort-retention.pbiviz` (built to `dist/atlyn-cohort-retention.pbiviz`) |
-| Storefront Blob path | `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz` |
-| SHA-256 | `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` |
-| Size | 21,827 bytes |
+| Storefront Blob path | `cohort-retention/1.0.3.0/atlyn-cohort-retention.pbiviz` |
+| SHA-256 | `e582bc85aaa006343fde4b251f79ca62c2cc8bbdc2fa86d0a12d34a58c0e4aa7` |
+| Size | 22,187 bytes |
 | Packaged CSS | 5,167 bytes, inline as `content.css` |
 | Resource entry | `resources/atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.pbiviz.json` |
 
@@ -399,8 +462,9 @@ comment calling it "the two files Power BI reads". Only the standalone `.pbiviz`
 
 That builder is now shared. `scripts/visual-package.js` is the single source of truth, used by
 `scripts/package.js` for the `.pbiviz` and by `scripts/generate-sample-report.js` for the
-embedded copy, so the two cannot drift again. The refactor was verified byte-preserving: the
-regenerated sample report is unchanged.
+embedded copy, so the two cannot drift again. The sample is regenerated from the current
+archive entries, and the audit gates byte equality between the standalone package and embedded
+copy.
 
 ### Verified against the official packager
 
@@ -422,8 +486,7 @@ in structure** to what this repository now produces:
 Two differences found during that comparison were closed rather than reasoned away: the
 `resources/` directory entry was missing, and the resource carried an explicit
 `"dependencies": null` that the official output omits. Both are now matched exactly, because
-this project cannot open the artifact in Power BI Desktop and matching the reference
-implementation is the strongest available substitute.
+matching the reference implementation is the strongest automated packaging check.
 
 ### Verified loadable
 
@@ -434,8 +497,32 @@ implementation is the strongest available substitute.
 grid cells with the stylesheet applied (`display: flex`). Rebuilding the archive in the old
 flat layout fails all three of those tests and the certification audit.
 
-This is the strongest available check short of Power BI Desktop itself: the artifact is proven
-to load and render **from its own bytes**, through the same manifest indirection the host uses.
+This automated check proves the artifact loads and renders **from its own bytes**, through the
+same manifest indirection the host uses. The corrected `1.0.3.0` PBIP retains the mapping and
+secondary-reduction fixes from the prior repair; its Desktop refresh, Save As, close/reopen, and
+final-render evidence is recorded in the release handoff before submission.
+
+### Native PBIX release handoff artifact
+
+The owner-controlled native report handoff is kept as a separate artifact from the packaged
+`.pbiviz` and is not rebuilt by `npm run package`.
+
+> Critical correction: the earlier `E6914547...` / 43,740-byte handoff was stale and invalid; it
+> rendered a blank custom frame and is not to be distributed. The canonical final handoff is the
+> exact coordinator rebuild from the validated `V:\cohort\samples` mirror, refreshed/rendered,
+> saved as Public, closed, and reopened without refresh. This artifact is the one to upload.
+
+| Field | Value |
+| --- | --- |
+| Path | `dist/release/AtlynCohortRetention.pbix` |
+| SHA-256 | `4A2792753859C166119178A2508D09B5A6DC256D2AC95B244EDF1696B7F08587` |
+| Size | 43,062 bytes |
+| Validation status | Public save, close/reopen, no refresh prompt, 16 cohorts x 12 periods, latest observed period 11, and 2024-01 / Period 1 = 61.8% |
+| Evidence | `C:\Users\ghamers\.copilot\chats\17d9edc4-eb66-4a62-b840-b001d87c9983\desktop-validation\cohort\evidence\final-rebuild-pre-save` and `...\final-rebuild-reopen` |
+
+This is the exact binary that the owner should hand to Partner Center after the repo's local
+packing and certification gates have passed; it is not a replacement for the reproducible
+`.pbiviz` artifact and it remains outside the package-bytes audit.
 
 ### Reproducibility scope
 
@@ -453,18 +540,29 @@ Combined with the `.gitattributes` LF pin, the artifact is identical on every pl
 
 | Environment | SHA-256 | Size |
 | --- | --- | --- |
-| Windows, Node 24.11.1, zlib 1.3.1-470d3a2 | `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` | 21,827 bytes |
-| CI, `ubuntu-latest`, Node 22.23.1, zlib 1.3.1-e00f703 | `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` | 21,827 bytes |
+| Windows, Node 24.17.0, zlib 1.3.1-e00f703 | `e582bc85aaa006343fde4b251f79ca62c2cc8bbdc2fa86d0a12d34a58c0e4aa7` | 22,187 bytes |
 
-**Confirmed identical**, so `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5`
-at 21,827 bytes is the value to publish in the release manifest, under
-`cohort-retention/1.0.1.0/`.
+**Confirmed identical across three consecutive local builds**, so
+`e582bc85aaa006343fde4b251f79ca62c2cc8bbdc2fa86d0a12d34a58c0e4aa7`
+at 22,187 bytes is the value to publish in the release manifest, under
+`cohort-retention/1.0.3.0/`.
 
 If the values ever diverge, take the authoritative hash and byte size from
 `dist/package-metadata.json` of the build whose `.pbiviz` you actually upload, and never mix a
 hash from one environment with a binary from another.
 
-**Do not publish any earlier hash.** Superseded within `1.0.1.0`, newest first:
+**Do not publish any earlier hash.** Superseded, newest first:
+`f55ddede50b575a1dc072a6751a3416f7621e2a48cbf1acc0ba608b9810da593` (21,904 bytes — the
+previous `1.0.3.0` package before the native matrix parser repair),
+`233a102d216943acc0701d459ae7e54ab1518b4365c20a906f6df2b766466d96` (21,914 bytes — the
+previous `1.0.3.0` package before removing unsupported matrix expand/collapse metadata),
+`d5149ec80270d92cdd561da735187a67d69e8fff8c155340310d9374c86ed133` (21,909 bytes — the
+previous `1.0.3.0` package before the native matrix binding repair), `daf4032d4c5abbd49b7a684239dcf4826e817fe874352448d9bec73566e1f0dc` (21,908 bytes — the
+`1.0.2.0` package already submitted and in progress in Partner Center, superseded by `1.0.3.0`),
+`caad178bbd3c578d941e5031aeb53756847dbefc36b64d34ca3bc04dc0fb5130` (21,904 bytes — the
+first `1.0.2.0` role-condition repair, superseded by the live-validated matrix reduction fix),
+`8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` (21,827 bytes — the
+last `1.0.1.0` package before the field-well certification repair),
 `abb01d7dd633a95ea40f0b4b2021b2fa536325edcb74542601ddab25596ac35f` (20,684 bytes — the
 sticky-header and caption stylesheet fixes changed `content.css`) and
 `7d4fc5de21bff78f3b3438bcd7de792b90935df5848459e254915383097ab809` (20,652 bytes — the
@@ -489,8 +587,9 @@ the current packaged hash to be recorded in both files, so deleting a stale valu
 updating it does not read as a pass.
 
 The 300 x 300 logo, the screenshots, and the entire `samples/` sample report are
-Partner Center **listing** assets and are intentionally not packaged inputs. The packaged
-inputs — the files whose bytes feed the two archive entries — are unchanged:
+Partner Center **listing** assets and are intentionally not packaged inputs. The packaged input
+set remains explicit; `capabilities.json` is intentionally updated when the visual's binding
+contract changes:
 
 ```text
 assets/icon.png
@@ -513,7 +612,7 @@ built package:
 | Artifact | Where the CSS lives | Bytes |
 | --- | --- | --- |
 | `dist/atlyn-cohort-retention.pbiviz` | `content.css` in `resources/<GUID>.pbiviz.json` | 5,167 |
-| `samples/…/CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json` | `content.css` | 5,167 |
+| `samples/…/CustomVisuals/<GUID>/resources/<GUID>.pbiviz.json` | `content.css` inside the matching PBIVIZ resource | 5,167 |
 
 Both are byte-identical to `style/visual.less`, and `content.css` is the field Power BI
 injects as the visual's stylesheet. Both are produced by the same
@@ -595,7 +694,7 @@ CI runs it after `npm run package`, against the artifact that run just built.
 
 | Command | What it proves |
 | --- | --- |
-| `npm test` | Packaging tests assert the PNG signature, exact icon/logo/screenshot dimensions, screenshot byte ceilings, required pbiviz fields, and that this dossier records the same values. Sample-report tests assert the PBIP/PBIR parts, the GUID binding, that every bound role exists in `capabilities.json`, that the model has no external data source, that the packaged input list is unchanged, and — functionally, in JSDOM — that the embedded bundle registers its plugin and renders a grid. |
+| `npm test` | Mapping tests evaluate the empty, every first-field, complete-sample, and deliberately rejected dual-minimum assignments. Packaging tests assert the PNG signature, exact icon/logo/screenshot dimensions, screenshot byte ceilings, required pbiviz fields, and that this dossier records the same values. Sample-report tests assert the visible usage hint, PBIP/PBIR parts, GUID binding, role names, offline model, packaged input list, and — functionally, in JSDOM — that the embedded bundle registers its plugin and renders a grid. |
 | `npm run typecheck` | TypeScript source compiles cleanly. |
 | `npm run eslint` | Full ESLint gate including `eslint-plugin-powerbi-visuals`. |
 | `npm run build` | Produces `dist/visual.js`. |
@@ -612,32 +711,22 @@ records the resolved submission fields, asset hashes and dimensions, an empty
 
 ## 11. Remaining owner-controlled steps
 
-These cannot be completed from this repository.
+The Desktop conversion and validation are complete for this repair. The remaining
+Partner Center and publishing actions cannot be completed from this repository.
 
-1. **Convert the sample report to `.pbix`.** Open `samples/AtlynSample.pbip` in
-   Power BI Desktop, then **run Home → Refresh → Schema and data — this is
-   required**. A PBIP caches no data (the cache lives in the gitignored
-   `.pbi/cache.abf`), so Desktop opens the project reporting *"Some of the tables
-   have incomplete or no data."* Saving without refreshing first produces a `.pbix`
-   with **empty tables**, which would fail AppSource review. Then confirm the visual
-   renders with **no credential prompt**, do **File → Save As → Power BI report
-   (.pbix)**, and reopen the saved `.pbix` to confirm the cohort triangle still
-   shows values. The PBIP is generated and validated here; the `.pbix` conversion
-   cannot be done headlessly, and `pbi-tools compile` is broken against the
-   installed Desktop version. See [section 8b](#8b-sample-report-offline).
-2. **Confirm the visual loads under the GUID
-   `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`** during step 1. The GUID
-   is now in the format the official tooling generates; see the GUID format
-   subsection of section 8b.
-3. **Create or confirm the Partner Center account** and the Power BI visual offer,
+1. **Use the refreshed `AtlynCohortRetention.pbix` from the release handoff.**
+   Verify its SHA-256 and byte size against the completion record before upload.
+   If the PBIP source or embedded visual changes, repeat the regeneration procedure
+   in [section 8b](#8b-sample-report-offline) rather than reusing this binary.
+2. **Create or confirm the Partner Center account** and the Power BI visual offer,
    configured as a **free** offer per [section 8a](#8a-licensing-and-pricing).
-4. **Upload the packaged `.pbiviz`** from `dist/atlyn-cohort-retention.pbiviz`.
-5. **Paste the listing fields** — support URL, privacy policy URL, and EULA — into
+3. **Upload the packaged `.pbiviz`** from `dist/atlyn-cohort-retention.pbiviz`.
+4. **Paste the listing fields** — support URL, privacy policy URL, and EULA — into
    the offer.
-6. **Upload the logo and the three screenshots** from `assets/`, and the `.pbix`
-   from step 1.
-7. **Re-publish the release manifest and the Azure Blob artifact** at the new
-   version-keyed path `cohort-retention/1.0.1.0/atlyn-cohort-retention.pbiviz`, with
+5. **Upload the logo and the three screenshots** from `assets/`, and the refreshed
+   `.pbix` from step 1.
+6. **Re-publish the release manifest and the Azure Blob artifact** at the new
+   version-keyed path `cohort-retention/1.0.3.0/atlyn-cohort-retention.pbiviz`, with
    the new `.pbiviz` SHA-256 and byte size from
    [section 9](#9-packaged-artifact). Leave the superseded
    `cohort-retention/1.0.0.0/` artifact alone rather than overwriting it; the whole
@@ -646,7 +735,7 @@ These cannot be completed from this repository.
 
 ## 12. Status
 
-This repository has satisfied every submission requirement it controls. Nothing
-in this document asserts Microsoft certification, Partner Center approval, or
-validation in a live Power BI host; none of those has been obtained, and the
-sample report has not been opened in Power BI Desktop from here.
+This repository has satisfied every submission requirement it controls for the
+`1.0.3.0` package. Desktop validation evidence is required before handoff, and
+nothing in this document asserts Microsoft certification or Partner Center approval;
+neither has been obtained.

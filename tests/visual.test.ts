@@ -195,6 +195,20 @@ describe("visual interaction and lifecycle", () => {
     expect(host.eventService.renderingFinished).toHaveBeenCalled();
   });
 
+  test("shows actionable field-well guidance before data is complete", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const host = createHost();
+    const instance = visual(element, host);
+
+    instance.update({ viewport: { width: 400, height: 300 }, dataViews: [] } as never);
+
+    expect(element.querySelector(".atlyn-empty")?.textContent).toMatch(
+      /Add Cohort and Period.*measure fields/
+    );
+    expect(host.eventService.renderingFailed).not.toHaveBeenCalled();
+  });
+
   test("consumes bound tooltip fields and handles touch tooltip lifecycle", () => {
     const element = document.createElement("div");
     document.body.appendChild(element);

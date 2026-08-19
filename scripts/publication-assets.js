@@ -30,7 +30,7 @@ const SCREENSHOT_MAX_COUNT = 5;
 const MINIMUM_DESCRIPTION_LENGTH = 120;
 
 /** Partner Center listing URLs that pbiviz.json has no field for. */
-const PRIVACY_POLICY_URL = "https://atlyn.io/legal/privacy";
+const PRIVACY_POLICY_URL = "https://atlynco.com/legal/privacy";
 const TERMS_URL = "https://atlyn.io/legal/terms";
 
 /** RFC 2606 / RFC 6761 reserved names that Partner Center validation rejects. */
@@ -39,8 +39,8 @@ const RESERVED_TLDS = ["example", "invalid", "test", "localhost"];
 /** Requirements only the account owner can satisfy outside this repository. */
 function buildOwnerActions(version) {
   return [
-    "Open samples/AtlynSample.pbip in Power BI Desktop, confirm the visual renders and the data refreshes with no credential prompt, then File > Save As > Power BI report (.pbix) and upload that .pbix to Partner Center. The PBIP is generated and validated in this repository; the .pbix conversion cannot be done headlessly because a .pbix model is a binary Analysis Services backup image.",
-    "Confirm during that Desktop step that the visual loads under the GUID atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11. It is now in the format the official tooling generates (name + uppercase hyphenless UUID), replacing the earlier hyphenated UUID; see the GUID format section of docs/partner-center-submission.md.",
+    "Upload the refreshed AtlynCohortRetention.pbix supplied with the release handoff after verifying its SHA-256 and byte size. If samples/AtlynSample.pbip or its embedded visual changes, regenerate the PBIX with the Desktop refresh, Save As, and reopen procedure in docs/partner-center-submission.md.",
+    "Before upload, confirm the refreshed PBIX shows data and the usage tip, has no visual error, and loads under GUID atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11.",
     "Create or confirm the Microsoft Partner Center account and the Power BI visual offer, configured as a FREE offer with no paid or transactable billing.",
     "Paste the privacy policy URL, support URL, and EULA into the Partner Center offer listing, and upload the logo and screenshots.",
     `Re-publish the release manifest and the Azure Blob artifact under the version-keyed path cohort-retention/${version}/atlyn-cohort-retention.pbiviz, because the packaged .pbiviz bytes changed and must not be published under an already-distributed version number.`

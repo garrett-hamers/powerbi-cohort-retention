@@ -15,12 +15,12 @@
  *
  * This module is the single source of truth for that shape, shared by `scripts/package.js`
  * (which zips the two files into the `.pbiviz`) and `scripts/generate-sample-report.js`
- * (which writes the same two files under `Report/CustomVisuals/<GUID>/` to embed the visual
- * in the offline sample report).
+ * (which extracts those same archive entries into the report's CustomVisuals folder).
  */
 
 const fs = require("node:fs");
 const path = require("node:path");
+const JSZip = require("jszip");
 
 const root = path.resolve(__dirname, "..");
 
@@ -44,7 +44,7 @@ function readText(...segments) {
  * valid JavaScript identifier and the `var` declaration position would be legal here as well.
  */
 function pluginRegistration(pbiviz) {
-  const { guid, displayName, visualClassName, version } = pbiviz.visual;
+ const { guid, displayName, visualClassName } = pbiviz.visual;
   return `
 /* Power BI visual plugin registration for ${displayName}. */
 (function () {
@@ -52,13 +52,13 @@ function pluginRegistration(pbiviz) {
     var powerbiKey = "powerbi";
     var powerbiGlobal = typeof window !== "undefined" ? window[powerbiKey] : undefined;
     if (!powerbiGlobal) return;
-    powerbiGlobal.visuals = powerbiGlobal.visuals || {};
-    powerbiGlobal.visuals.plugins = powerbiGlobal.visuals.plugins || {};
-    powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}] = {
+
+    AtlynCohortRetention = AtlynCohortRetention || {};
+
+    var plugin = {
         name: ${JSON.stringify(guid)},
         displayName: ${JSON.stringify(displayName)},
         class: ${JSON.stringify(visualClassName)},
-        version: ${JSON.stringify(version)},
         apiVersion: ${JSON.stringify(pbiviz.apiVersion)},
         create: function (options) {
             if (typeof AtlynCohortRetention !== "undefined" && AtlynCohortRetention.${visualClassName}) {
@@ -66,8 +66,20 @@ function pluginRegistration(pbiviz) {
             }
             throw "Visual instance not found";
         },
+        createModalDialog: function () {
+            return null;
+        },
         custom: true
     };
+
+    AtlynCohortRetention.default = plugin;
+    if (typeof window !== "undefined") {
+        window[${JSON.stringify(guid)}] = AtlynCohortRetention;
+    }
+
+    powerbiGlobal.visuals = powerbiGlobal.visuals || {};
+    powerbiGlobal.visuals.plugins = powerbiGlobal.visuals.plugins || {};
+    powerbiGlobal.visuals.plugins[${JSON.stringify(guid)}] = plugin;
 })();
 `;
 }
@@ -148,7 +160,39 @@ function resourceEntryName(guid) {
   return `resources/${guid}.pbiviz.json`;
 }
 
+/**
+ * Builds the exact deterministic archive used by the product package.
+ *
+ * Power BI Desktop's PBIP CustomVisual resource format uses the same two files as the product
+ * archive, so the sample generator extracts these archive entries instead of reserializing an
+ * approximation of the package.
+ */
+async function buildVisualArchive(descriptor, definition) {
+  const resourcePath = resourceEntryName(descriptor.visual.guid);
+  const entryOptions = {
+    date: new Date("2000-01-01T00:00:00.000Z"),
+    createFolders: false,
+    unixPermissions: 0o644,
+    dosPermissions: 0
+  };
+
+  const archive = new JSZip();
+  archive.file("package.json", `${JSON.stringify(descriptor, null, 2)}\n`, entryOptions);
+  archive.file("resources/", null, { ...entryOptions, dir: true });
+  archive.file(resourcePath, JSON.stringify(definition), entryOptions);
+
+  return archive.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 9 },
+    platform: "DOS",
+    streamFiles: false,
+    comment: ""
+  });
+}
+
 module.exports = {
+  buildVisualArchive,
   buildVisualPackage,
   pluginRegistration,
   readStringResources,

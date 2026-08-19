@@ -124,11 +124,9 @@
       "conditions": [
         {
           "Cohort": {
-            "min": 1,
             "max": 1
           },
           "Period": {
-            "min": 1,
             "max": 1
           },
           "Retained": {
@@ -191,7 +189,7 @@
             "in": "Period"
           },
           "dataReductionAlgorithm": {
-            "window": {
+            "top": {
               "count": 500
             }
           }
@@ -199,68 +197,68 @@
         "values": {
           "select": [
             {
-              "for": {
-                "in": "Retained"
+              "bind": {
+                "to": "Retained"
               }
             },
             {
-              "for": {
-                "in": "CohortSize"
+              "bind": {
+                "to": "CohortSize"
               }
             },
             {
-              "for": {
-                "in": "EntityCount"
+              "bind": {
+                "to": "EntityCount"
               }
             },
             {
-              "for": {
-                "in": "Numerator"
+              "bind": {
+                "to": "Numerator"
               }
             },
             {
-              "for": {
-                "in": "Denominator"
+              "bind": {
+                "to": "Denominator"
               }
             },
             {
-              "for": {
-                "in": "RevenueNumerator"
+              "bind": {
+                "to": "RevenueNumerator"
               }
             },
             {
-              "for": {
-                "in": "RevenueDenominator"
+              "bind": {
+                "to": "RevenueDenominator"
               }
             },
             {
-              "for": {
-                "in": "ARPU"
+              "bind": {
+                "to": "ARPU"
               }
             },
             {
-              "for": {
-                "in": "NRR"
+              "bind": {
+                "to": "NRR"
               }
             },
             {
-              "for": {
-                "in": "NRRExpansion"
+              "bind": {
+                "to": "NRRExpansion"
               }
             },
             {
-              "for": {
-                "in": "NRRContraction"
+              "bind": {
+                "to": "NRRContraction"
               }
             },
             {
-              "for": {
-                "in": "NRRReactivation"
+              "bind": {
+                "to": "NRRReactivation"
               }
             },
             {
-              "for": {
-                "in": "Values"
+              "bind": {
+                "to": "Values"
               }
             },
             {
@@ -282,14 +280,6 @@
         }
       ]
     }
-  },
-  "expandCollapse": {
-    "roles": ["Cohort", "Period"],
-    "addDataViewFlags": {
-      "defaultValue": true
-    },
-    "supportsMerge": true,
-    "restoreProjectionsOrderFromBookmark": true
   },
   "subtotals": {
     "matrix": {

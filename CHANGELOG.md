@@ -2,6 +2,67 @@
 
 ## Unreleased
 
+- **Cleared the transitive npm audit blocker.** The current Power BI tooling
+  (`powerbi-visuals-tools` `7.2.1` and `postcss` `8.5.25`) now resolves `nanoid`
+  through a narrow `3.3.18` override, the first patched version for the reported
+  high-severity issue. A clean install and both npm audit levels report zero
+  vulnerabilities; the PBIVIZ bytes and release provenance remain unchanged.
+- **Fixed native PBIP private-visual registration.** Desktop validation showed that this release
+  loads the proven unpacked `CustomVisuals/<GUID>/` resource package, not the
+  `RegisteredResources` archive layout. The sample generator now extracts the exact
+  `package.json` and `resources/<GUID>.pbiviz.json` entries from the built PBIVIZ archive, and
+  the certification audit/tests require both files to remain byte-identical to those entries.
+  The product PBIVIZ and sample are regenerated together from the current source package.
+- **Fixed native PBIP matrix field binding.** Single-field measure roles now use
+  `bind.to` selectors in the matrix mapping, while the multi-field Tooltip role remains
+  iterative. This keeps Desktop's Build visual pane aligned with the persisted
+  `Cohort`, `Period`, `Retained`, and `CohortSize` sample query, and the audit rejects a
+  regression to iterated single-field measure selectors. Regression coverage proves both the
+  accepted binding shape and the rejected legacy shape.
+- **Removed unsupported matrix expand/collapse metadata.** The flat matrix no longer
+  advertises `expandCollapse` for the `Cohort` row and `Period` column roles. Desktop
+  requires drill support for that capability and does not permit it on matrix columns;
+  the executable audit and regression suite reject either invalid shape.
+- **Advanced the corrected release to `1.0.3.0` (`package.json` `1.0.3`).** Partner Center
+  already has `1.0.2.0` submitted and in progress, so this release uses a higher version and
+  must not reuse that package or its sample PBIX.
+- **Repaired Microsoft certification failure 1180.2.12 and advanced the visual to
+  `1.0.2.0` (`package.json` `1.0.2`) in the prior release.** The only data-view mapping condition required both
+  `Cohort` and `Period` with `min: 1`. Microsoft documents that only one data role may have
+  `min >= 1` in a condition; because conditions gate every field-well update, neither role
+  could be assigned first and the visual never received a data view. Both minima are removed
+  while every role keeps its existing maximum, so the empty state and every single-role first
+  assignment are valid and the complete matrix contract is unchanged.
+- Added `scripts/data-role-mapping-audit.js` to the certification gate and four regression
+  tests that evaluate assignment semantics rather than only snapshotting JSON. The tests
+  deliberately restore the rejected `Cohort` + `Period` minima and prove the audit reports the
+  simultaneous requirements and both rejected first-assignment paths.
+- Live Power BI Desktop validation found and fixed a second capabilities defect before the
+  sample was saved: `window` reduction was declared on both matrix axes, and Desktop rejected
+  the column-side `DataWindow` as an invalid secondary reduction algorithm. Rows retain the
+  500-item window for `fetchMoreData`; columns now use a 500-item `top` reduction. The audit
+  and regression suite reject a secondary `window` declaration.
+- **Addressed soft policy 1180.2.3.1.** The generated Power BI sample now shows a wrapped,
+  visible subtitle explaining the `Cohort` and `Period` bindings and the cell-hover detail.
+  The visual's no-data state now gives actionable field-well instructions instead of only
+  saying no data is available.
+- Corrected the submission privacy URL to `https://atlynco.com/legal/privacy` in the
+  generated release metadata, dossier, EULA, and tests.
+- The submission-ready `1.0.3.0` package is
+  `e582bc85aaa006343fde4b251f79ca62c2cc8bbdc2fa86d0a12d34a58c0e4aa7` at 22,187 bytes.
+  It is deterministic across three consecutive local builds and contains the repaired
+  native matrix parser, capabilities, and version `1.0.3.0`; the already-submitted
+  `1.0.2.0` artifact is superseded.
+- The `1.0.3.0` sample PBIX is intentionally pending the shared Power BI Desktop slot. It must
+  be refreshed, rendered, saved under `dist/release/AtlynCohortRetention.pbix`, closed, reopened,
+  and final-rendered before its hash and Desktop evidence are recorded.
+- **Integrated the corrected native handoff PBIX artifact.** The canonical final binary at
+  `dist/release/AtlynCohortRetention.pbix` is `4A2792753859C166119178A2508D09B5A6DC256D2AC95B244EDF1696B7F08587`
+  at 43,062 bytes, rebuilt from the validated `V:\cohort\samples` mirror and revalidated after a
+  Public save, close/reopen, and final-render check. The stale `E6914547...` / 43,740-byte copy is
+  explicitly rejected and not to be distributed. This exact binary is the final report handoff,
+  separate from the package-bytes audit for `dist/atlyn-cohort-retention.pbiviz`.
+
 - **Closed the recorded-hash gap.** The packaged `.pbiviz` SHA-256 and byte size, and the
   icon, logo, and screenshot hashes, are quoted in `docs/partner-center-submission.md` and
   in this file, and nothing verified any of them. A stale value did not fail the build — it
@@ -81,11 +142,11 @@
 - `tests/styles.test.ts` asserts the CSS *rules* behind each finding plus the markup they
   depend on, so `npm test` still catches a regression on a machine with no browser.
 - **The packaged bytes changed**, because `style/visual.less` is a packaged input inlined as
-  `content.css`. The artifact is now
+  `content.css`. The intermediate pre-certification artifact was
   `8b05ff89d5a57282e052f74ceb286695100930e02d6413c414ff085dd83f6de5` at 21,827 bytes, with
   5,167 bytes of CSS inline (was 3,524). The GUID, the packaged filename, and the version
-  `1.0.1.0` are all unchanged; nothing has been distributed at `1.0.1.0`, so this stays within
-  the same version. The sample report was regenerated with `npm run sample:report` rather than
+  `1.0.1.0` were unchanged at that stage. It is superseded by the `1.0.2.0` certification
+  repair above. The sample report was regenerated with `npm run sample:report` rather than
   hand-edited, so its embedded copy carries the same CSS.
 
 - **Changed the visual GUID to `atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11`**, from the

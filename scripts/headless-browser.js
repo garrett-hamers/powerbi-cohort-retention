@@ -173,6 +173,63 @@ class DevToolsClient {
   }
 }
 
+async function waitForExit(child, timeoutMs = 5000) {
+  if (child.exitCode !== null) return;
+  await Promise.race([
+    new Promise((resolve) => child.once("exit", resolve)),
+    delay(timeoutMs)
+  ]);
+}
+
+function terminateBrowserTree(browser) {
+  if (browser.exitCode !== null) return;
+  if (process.platform !== "win32") {
+    browser.kill();
+    return;
+  }
+
+  const rootPid = Number(browser.pid);
+  if (!Number.isInteger(rootPid) || rootPid <= 0) {
+    throw new Error("The browser did not expose a valid process ID for cleanup.");
+  }
+  const command = [
+    `$root = ${rootPid};`,
+    "$all = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId);",
+    "$ids = [System.Collections.Generic.List[int]]::new();",
+    "$ids.Add($root);",
+    "$pending = [System.Collections.Generic.Queue[int]]::new();",
+    "$pending.Enqueue($root);",
+    "while ($pending.Count -gt 0) {",
+    "  $parent = $pending.Dequeue();",
+    "  foreach ($child in $all | Where-Object ParentProcessId -eq $parent) {",
+    "    if (-not $ids.Contains([int]$child.ProcessId)) {",
+    "      $ids.Add([int]$child.ProcessId);",
+    "      $pending.Enqueue([int]$child.ProcessId);",
+    "    }",
+    "  }",
+    "}",
+    "Stop-Process -Id ([int[]]$ids) -Force -ErrorAction SilentlyContinue;"
+  ].join(" ");
+  childProcess.execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], {
+    stdio: "ignore"
+  });
+}
+
+async function removeProfileDirectory(profileDirectory) {
+  let lastError;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      fs.rmSync(profileDirectory, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (!["EBUSY", "ENOTEMPTY", "EPERM"].includes(error.code)) throw error;
+      lastError = error;
+      await delay(200);
+    }
+  }
+  throw lastError;
+}
+
 function launchArguments({ width, height, profileDirectory, harnessUrl }) {
   return [
     "--headless=new",
@@ -256,10 +313,11 @@ async function withHarness({ width, height, harnessPath, routes = {}, readyExpre
     return await run(client);
   } finally {
     if (client) client.close();
-    browser.kill();
+    terminateBrowserTree(browser);
     server.close();
+    await waitForExit(browser);
     await delay(200);
-    fs.rmSync(profileDirectory, { recursive: true, force: true });
+    await removeProfileDirectory(profileDirectory);
   }
 }
 

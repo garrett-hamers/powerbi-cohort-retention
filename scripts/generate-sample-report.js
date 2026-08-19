@@ -21,11 +21,11 @@
  *   and no refresh dependency. This is a stronger offline guarantee than an inline
  *   Power Query literal, which still counts as a query.
  *
- * - **Visual embedded under `Report/CustomVisuals/<GUID>/`** and declared in
- *   `report.json` `resourcePackages`. Microsoft documents this folder as holding
- *   *private* custom visuals, while AppSource and Organization visuals are loaded
- *   automatically by Desktop. `publicCustomVisuals` would therefore resolve from the
- *   AppSource store at open time and would not be offline.
+ * - **Visual embedded as the exact PBIVIZ archive entries under
+ *   `Report/CustomVisuals/<GUID>/`** and registered in `report.json`. This is the private-visual
+ *   resource shape Power BI Desktop loads from a PBIP report.
+ *   `publicCustomVisuals` would resolve from the AppSource store at open time and would not be
+ *   offline.
  *
  * Usage: npm run build && npm run sample:report
  */
@@ -33,8 +33,9 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const JSZip = require("jszip");
 const { triangleRecords } = require("./cohort-dataset");
-const { buildVisualPackage, readText } = require("./visual-package");
+const { buildVisualArchive, buildVisualPackage, resourceEntryName } = require("./visual-package");
 
 const root = path.resolve(__dirname, "..");
 const samples = path.join(root, "samples");
@@ -44,6 +45,8 @@ const modelFolder = `${projectName}.SemanticModel`;
 const tableName = "CohortRetention";
 const COHORT_COUNT = 16;
 const PERIOD_COUNT = 12;
+const SAMPLE_USAGE_HINT =
+  "Tip: Bind Cohort to rows and Period to relative integer columns. Hover a cell for denominator and observation details.";
 
 /**
  * `definition.pbir` and `definition.pbism` MUST be "4.0" or higher for the exploded
@@ -90,8 +93,38 @@ function write(relativePath, contents) {
   return relativePath;
 }
 
+function writeBuffer(relativePath, contents) {
+  const target = path.join(samples, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, contents);
+  return relativePath;
+}
+
 function writeJson(relativePath, value) {
   return write(relativePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function extractVisualArchive(archiveBytes, guid) {
+  const archive = await JSZip.loadAsync(archiveBytes);
+  const resourcePath = resourceEntryName(guid);
+  const packageEntry = archive.file("package.json");
+  const resourceEntry = archive.file(resourcePath);
+  if (!packageEntry || !resourceEntry) {
+    throw new Error(
+      `The built PBIVIZ must contain package.json and ${resourcePath} before generating the sample.`
+    );
+  }
+
+  return [
+    [
+      `${reportFolder}/CustomVisuals/${guid}/package.json`,
+      await packageEntry.async("nodebuffer")
+    ],
+    [
+      `${reportFolder}/CustomVisuals/${guid}/resources/${path.posix.basename(resourcePath)}`,
+      await resourceEntry.async("nodebuffer")
+    ]
+  ];
 }
 
 /** TMDL is indentation scoped and Power BI Desktop writes it tab-indented. */
@@ -230,6 +263,17 @@ function buildVisual(guid) {
               }
             }
           }
+        ],
+        subTitle: [
+          {
+            properties: {
+              show: { expr: { Literal: { Value: "true" } } },
+              text: {
+                expr: { Literal: { Value: `'${SAMPLE_USAGE_HINT}'` } }
+              },
+              titleWrap: { expr: { Literal: { Value: "true" } } }
+            }
+          }
         ]
       },
       drillFilterOtherVisuals: true
@@ -237,7 +281,7 @@ function buildVisual(guid) {
   };
 }
 
-function main() {
+async function main() {
   const bundlePath = path.join(root, "dist", "visual.js");
   if (!fs.existsSync(bundlePath)) {
     throw new Error("dist/visual.js is missing. Run `npm run build` before generating the sample report.");
@@ -352,13 +396,10 @@ function main() {
     )
   );
 
-  written.push(writeJson(`${reportFolder}/CustomVisuals/${guid}/package.json`, descriptor));
-  written.push(
-    write(
-      `${reportFolder}/CustomVisuals/${guid}/resources/${guid}.pbiviz.json`,
-      `${JSON.stringify(definition)}\n`
-    )
-  );
+  const archive = await buildVisualArchive(descriptor, definition);
+  for (const [relativePath, contents] of await extractVisualArchive(archive, guid)) {
+    written.push(writeBuffer(relativePath, contents));
+  }
 
   for (const relativePath of written) {
     console.log(`Wrote samples/${relativePath}`);
@@ -369,4 +410,7 @@ function main() {
   );
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

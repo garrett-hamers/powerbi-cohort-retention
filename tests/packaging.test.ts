@@ -87,6 +87,33 @@ describe("packaged .pbiviz is loadable by a host", () => {
     expect(Buffer.byteLength(definition.content.css, "utf8")).toBeGreaterThan(1000);
   });
 
+  maybe("packages the standard GUID-global plugin contract expected by Desktop", async () => {
+    const { definition } = await loadPackage();
+    const pbiviz = JSON.parse(fs.readFileSync(path.join(root, "pbiviz.json"), "utf8"));
+    const script = definition.content.js;
+
+    expect(script).toContain(`window[${JSON.stringify(guid)}] = AtlynCohortRetention`);
+    expect(script).toContain("AtlynCohortRetention.default = plugin");
+    expect(script).toContain("createModalDialog");
+    expect(script).not.toContain("version: ");
+    expect(script).toContain(`name: ${JSON.stringify(guid)}`);
+    expect(script).toContain(`displayName: ${JSON.stringify(pbiviz.visual.displayName)}`);
+    expect(script).toContain(`class: ${JSON.stringify(pbiviz.visual.visualClassName)}`);
+    expect(script).toContain(`apiVersion: ${JSON.stringify(pbiviz.apiVersion)}`);
+
+    (window as any).powerbi = { visuals: { plugins: {} } };
+    new Function(script)();
+    const plugin = (window as any).powerbi.visuals.plugins[guid];
+    expect(plugin).toBeDefined();
+    expect(plugin.name).toBe(guid);
+    expect(plugin.displayName).toBe(pbiviz.visual.displayName);
+    expect(plugin.class).toBe(pbiviz.visual.visualClassName);
+    expect(plugin.apiVersion).toBe(pbiviz.apiVersion);
+    expect(plugin.createModalDialog).toEqual(expect.any(Function));
+    expect(plugin.version).toBeUndefined();
+    expect((window as any)[guid].default).toBe(plugin);
+  });
+
   maybe("registers its plugin and renders a grid from the packaged bytes", async () => {
     const { definition } = await loadPackage();
 
@@ -190,7 +217,7 @@ describe("clean visual package metadata", () => {
       expect.arrayContaining([expect.objectContaining({ value: "entity-retention" })])
     );
     expect(capabilities.dataViewMappings[0].matrix.rows.dataReductionAlgorithm.window.count).toBe(500);
-    expect(capabilities.dataViewMappings[0].matrix.columns.dataReductionAlgorithm.window.count).toBe(500);
+    expect(capabilities.dataViewMappings[0].matrix.columns.dataReductionAlgorithm.top.count).toBe(500);
     expect(capabilities.tooltips.roles).toEqual(["Tooltip"]);
     expect(capabilities.tooltips.supportEnhancedTooltips).toBe(true);
   });
@@ -216,8 +243,9 @@ describe("clean visual package metadata", () => {
     });
     const packageScript = fs.readFileSync(path.join(root, "scripts", "package.js"), "utf8");
     expect(packageScript).toContain("buildVisualPackage");
-    expect(packageScript).toContain('date: new Date("2000-01-01T00:00:00.000Z")');
     const visualPackage = fs.readFileSync(path.join(root, "scripts", "visual-package.js"), "utf8");
+    expect(visualPackage).toContain("buildVisualArchive");
+    expect(visualPackage).toContain('date: new Date("2000-01-01T00:00:00.000Z")');
     expect(visualPackage).toContain("stringResources");
     const metadataPath = path.join(root, "dist", "package-metadata.json");
     if (fs.existsSync(metadataPath)) {
@@ -340,7 +368,7 @@ describe("AppSource submission assets", () => {
     [
       "atlynCohortRetentionD9F6B5A21F844B6DA0F78C2C4E2E6A11",
       "https://atlyn.io/contact",
-      "https://atlyn.io/legal/privacy",
+      "https://atlynco.com/legal/privacy",
       "atlyn.help@gmail.com",
       "assets/partner-center-logo-300.png",
       "assets/icon.png",
