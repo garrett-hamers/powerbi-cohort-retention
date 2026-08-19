@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Cleared the transitive npm audit blocker.** The current Power BI tooling
+  (`powerbi-visuals-tools` `7.2.1` and `postcss` `8.5.25`) now resolves `nanoid`
+  through a narrow `3.3.18` override, the first patched version for the reported
+  high-severity issue. A clean install and both npm audit levels report zero
+  vulnerabilities; the PBIVIZ bytes and release provenance remain unchanged.
 - **Fixed native PBIP private-visual registration.** Desktop validation showed that this release
   loads the proven unpacked `CustomVisuals/<GUID>/` resource package, not the
   `RegisteredResources` archive layout. The sample generator now extracts the exact
